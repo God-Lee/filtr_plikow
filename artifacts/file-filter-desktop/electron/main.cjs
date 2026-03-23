@@ -16,6 +16,8 @@ const DISCIPLINE_FOLDERS = [
   "6. Koordynacja",
 ];
 
+const IGNORED_EXTENSIONS = new Set([".bak", ".dwl", ".dwl2", ".pcp", ".log"]);
+
 const SEGMENT_RULES = [
   /^\d{5}$/,
   /^[A-Z0-9]{2,4}$/,
@@ -170,6 +172,11 @@ async function scanProject(projectsRoot, projectName) {
         }
 
         const absolutePath = path.join(scanPath, entry.name);
+        const extension = path.extname(entry.name).toLowerCase();
+        if (IGNORED_EXTENSIONS.has(extension)) {
+          continue;
+        }
+
         const parsed = parseFileName(entry.name, projectNumber);
 
         results.push({
