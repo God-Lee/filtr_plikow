@@ -40,7 +40,7 @@ button {
 
 .hero-bar {
   display: flex;
-  justify-content: space-between;
+  align-items: flex-end;
   gap: 24px;
   padding: 28px 32px;
   border-radius: 28px;
@@ -60,14 +60,6 @@ button {
   max-width: 720px;
   margin: 12px 0 0;
   color: rgba(245, 246, 248, 0.82);
-}
-
-.hero-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 12px;
-  min-width: 360px;
 }
 
 .meta-card,
@@ -106,7 +98,10 @@ button {
 
 .control-bar {
   display: grid;
-  grid-template-columns: 280px 160px 150px minmax(260px, 1fr) 220px;
+  grid-template-columns: minmax(360px, 460px) 170px minmax(280px, 1fr) 230px 170px;
+  position: relative;
+  z-index: 30;
+  align-items: end;
   gap: 14px;
   margin: 20px 0;
   padding: 18px;
@@ -139,6 +134,74 @@ button {
   border: 1px solid rgba(82, 98, 117, 0.18);
   background: rgba(246, 248, 251, 0.96);
   color: #17212b;
+}
+
+.project-picker-field {
+  position: relative;
+}
+
+.project-picker {
+  position: relative;
+}
+
+.project-picker input {
+  padding-right: 48px;
+}
+
+.project-picker.open input {
+  border-color: rgba(79, 137, 184, 0.55);
+  box-shadow: 0 0 0 4px rgba(79, 137, 184, 0.12);
+}
+
+.project-picker-toggle {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #5e7287;
+  transform: translateY(-50%);
+}
+
+.project-picker-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 200;
+  max-height: 280px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(82, 98, 117, 0.18);
+  box-shadow: 0 18px 40px rgba(43, 58, 74, 0.16);
+}
+
+.project-picker-empty {
+  padding: 12px 14px;
+  color: #66798d;
+  font-size: 14px;
+}
+
+.project-option {
+  display: block;
+  width: 100%;
+  padding: 11px 14px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: #22303d;
+  text-align: left;
+}
+
+.project-option:hover,
+.project-option.active {
+  background: rgba(79, 137, 184, 0.12);
+  color: #173553;
 }
 
 .search-field {
@@ -180,6 +243,12 @@ button {
   border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
+.secondary-button-light {
+  background: rgba(246, 248, 251, 0.96);
+  color: #22303d;
+  border: 1px solid rgba(82, 98, 117, 0.18);
+}
+
 .ghost-button,
 .toggle-card {
   background: rgba(246, 248, 251, 0.96);
@@ -204,6 +273,8 @@ button {
 .layout {
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr);
+  position: relative;
+  z-index: 1;
   gap: 18px;
   min-height: calc(100vh - 240px);
 }

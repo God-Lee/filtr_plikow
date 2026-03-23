@@ -1,4 +1,7 @@
 packages:
   - artifacts/file-filter-desktop
+allowBuilds:
+  electron: true
+  esbuild: true
 
 autoInstallPeers: false

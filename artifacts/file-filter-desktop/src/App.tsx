@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 declare global {
   interface Window {
@@ -61,16 +61,16 @@ type FilterGroup = {
 };
 
 const FILTER_GROUPS: FilterGroup[] = [
-  { key: "sourceKey", label: "Zrodlo", getValue: (file) => file.sourceKey },
-  { key: "disciplineFolder", label: "Folder branzowy", getValue: (file) => file.disciplineFolder },
+  { key: "sourceKey", label: "Źródło", getValue: (file) => file.sourceKey },
+  { key: "disciplineFolder", label: "Folder branżowy", getValue: (file) => file.disciplineFolder },
   { key: "extensionLabel", label: "Rozszerzenie", getValue: (file) => file.extensionLabel },
-  { key: "phase", label: "Faza", getValue: (file) => file.parsedSegments?.phase ?? "Blednie nazwane" },
-  { key: "disciplineCode", label: "Branza", getValue: (file) => file.parsedSegments?.disciplineCode ?? "Blednie nazwane" },
-  { key: "documentType", label: "Typ", getValue: (file) => file.parsedSegments?.documentType ?? "Blednie nazwane" },
-  { key: "level", label: "Poziom", getValue: (file) => file.parsedSegments?.level ?? "Blednie nazwane" },
-  { key: "drawingNumber", label: "Numer rysunku", getValue: (file) => file.parsedSegments?.drawingNumber ?? "Blednie nazwane" },
-  { key: "revision", label: "Rewizja", getValue: (file) => file.parsedSegments?.revision ?? "Blednie nazwane" },
-  { key: "status", label: "Status", getValue: (file) => file.parsedSegments?.status ?? "Blednie nazwane" },
+  { key: "phase", label: "Faza", getValue: (file) => file.parsedSegments?.phase ?? "Błędnie nazwane" },
+  { key: "disciplineCode", label: "Branża", getValue: (file) => file.parsedSegments?.disciplineCode ?? "Błędnie nazwane" },
+  { key: "documentType", label: "Typ", getValue: (file) => file.parsedSegments?.documentType ?? "Błędnie nazwane" },
+  { key: "level", label: "Poziom", getValue: (file) => file.parsedSegments?.level ?? "Błędnie nazwane" },
+  { key: "drawingNumber", label: "Numer rysunku", getValue: (file) => file.parsedSegments?.drawingNumber ?? "Błędnie nazwane" },
+  { key: "revision", label: "Rewizja", getValue: (file) => file.parsedSegments?.revision ?? "Błędnie nazwane" },
+  { key: "status", label: "Status", getValue: (file) => file.parsedSegments?.status ?? "Błędnie nazwane" },
 ];
 
 const INITIAL_FILTERS = Object.fromEntries(FILTER_GROUPS.map((group) => [group.key, [] as string[]]));
@@ -89,6 +89,8 @@ export function App() {
   const [projectsRoot, setProjectsRoot] = useState("");
   const [projects, setProjects] = useState<string[]>([]);
   const [selectedProject, setSelectedProject] = useState("");
+  const [projectQuery, setProjectQuery] = useState("");
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [scanning, setScanning] = useState(false);
@@ -96,6 +98,7 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showInvalidOnly, setShowInvalidOnly] = useState(false);
   const [filters, setFilters] = useState<Record<string, string[]>>(INITIAL_FILTERS);
+  const projectPickerRef = useRef<HTMLDivElement | null>(null);
 
   async function refreshProjects(preferredProject?: string) {
     setLoadingProjects(true);
@@ -113,11 +116,12 @@ export function App() {
       const nextProject =
         preferredProject && projectNames.includes(preferredProject)
           ? preferredProject
-          : projectNames[0] ?? "";
+          : "";
 
       setSelectedProject(nextProject);
+      setProjectQuery(nextProject);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Nie udalo sie wczytac listy projektow.");
+      setErrorMessage(error instanceof Error ? error.message : "Nie udało się wczytać listy projektów.");
     } finally {
       setLoadingProjects(false);
     }
@@ -131,6 +135,17 @@ export function App() {
     const files = scanResult?.files ?? [];
     return Object.fromEntries(FILTER_GROUPS.map((group) => [group.key, extractOptions(files, group)]));
   }, [scanResult]);
+
+  const filteredProjects = useMemo(() => {
+    const query = normalize(projectQuery.trim());
+    const selectedQuery = normalize(selectedProject.trim());
+
+    if (!query || query === selectedQuery) {
+      return projects;
+    }
+
+    return projects.filter((project) => normalize(project).includes(query));
+  }, [projectQuery, projects, selectedProject]);
 
   const filteredFiles = useMemo(() => {
     const files = scanResult?.files ?? [];
@@ -173,16 +188,40 @@ export function App() {
     });
   }, [filters, scanResult, searchQuery, showInvalidOnly]);
 
+  useEffect(() => {
+    if (filteredProjects.length === 0) {
+      return;
+    }
+
+    if (!filteredProjects.includes(selectedProject)) {
+      setSelectedProject("");
+    }
+  }, [filteredProjects, selectedProject]);
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (!projectPickerRef.current?.contains(event.target as Node)) {
+        setProjectPickerOpen(false);
+        setProjectQuery(selectedProject);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [selectedProject]);
+
   async function handleChooseRoot() {
     const settings = await window.fileFilterApi.chooseProjectsRoot();
     setProjectsRoot(settings.projectsRoot);
     setScanResult(null);
     setFilters(INITIAL_FILTERS);
+    setProjectQuery("");
+    setProjectPickerOpen(false);
     await refreshProjects();
   }
 
-  async function handleScan() {
-    if (!selectedProject) {
+  async function runScan(projectName: string) {
+    if (!projectName) {
       return;
     }
 
@@ -190,13 +229,13 @@ export function App() {
     setErrorMessage("");
 
     try {
-      const result = await window.fileFilterApi.scanProject(selectedProject);
+      const result = await window.fileFilterApi.scanProject(projectName);
       setScanResult(result);
       setFilters(INITIAL_FILTERS);
       setSearchQuery("");
       setShowInvalidOnly(false);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Nie udalo sie przeskanowac projektu.");
+      setErrorMessage(error instanceof Error ? error.message : "Nie udało się przeskanować projektu.");
     } finally {
       setScanning(false);
     }
@@ -222,6 +261,21 @@ export function App() {
     setShowInvalidOnly(false);
   }
 
+  async function handleProjectSelect(project: string) {
+    setSelectedProject(project);
+    setProjectQuery(project);
+    setProjectPickerOpen(false);
+    await runScan(project);
+  }
+
+  async function handleRefreshCurrentProject() {
+    if (!selectedProject) {
+      return;
+    }
+
+    await runScan(selectedProject);
+  }
+
   const activeFilterCount = Object.values(filters).reduce((sum, values) => sum + values.length, 0);
 
   return (
@@ -229,50 +283,88 @@ export function App() {
       <header className="hero-bar">
         <div>
           <p className="eyebrow">Ekoinbud</p>
-          <h1>Filtr plikow projektowych</h1>
-          <p className="hero-copy">
-            Wybierz projekt, przeskanuj tylko foldery EDT i PDF, a potem filtruj pliki jak w slicerach Excela.
-          </p>
-        </div>
-
-        <div className="hero-actions">
-          <div className="meta-card">
-            <span className="meta-label">Folder projektow</span>
-            <strong title={projectsRoot || "Nie wybrano"}>{projectsRoot || "Nie wybrano folderu"}</strong>
-          </div>
-          <button className="secondary-button" onClick={handleChooseRoot}>
-            Zmien folder
-          </button>
+          <h1>Filtr plików projektowych</h1>
         </div>
       </header>
 
       <section className="control-bar">
-        <label className="field">
+        <div className="field project-picker-field" ref={projectPickerRef}>
           <span>Projekt</span>
-          <select
-            value={selectedProject}
-            onChange={(event) => setSelectedProject(event.target.value)}
-            disabled={!projectsRoot || loadingProjects}
-          >
-            {projects.length === 0 && <option value="">Brak projektow</option>}
-            {projects.map((project) => (
-              <option key={project} value={project}>
-                {project}
-              </option>
-            ))}
-          </select>
-        </label>
+          <div className={`project-picker ${projectPickerOpen ? "open" : ""}`}>
+            <input
+              value={projectQuery}
+              onFocus={() => {
+                setProjectPickerOpen(true);
+                setProjectQuery("");
+              }}
+              onChange={(event) => {
+                setProjectQuery(event.target.value);
+                setProjectPickerOpen(true);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setProjectPickerOpen(false);
+                  setProjectQuery(selectedProject);
+                }
+
+                if (event.key === "Enter" && filteredProjects.length > 0) {
+                  event.preventDefault();
+                  void handleProjectSelect(filteredProjects[0]);
+                }
+              }}
+              placeholder="Wybierz lub wyszukaj projekt"
+              disabled={!projectsRoot || loadingProjects}
+            />
+            <button
+              type="button"
+              className="project-picker-toggle"
+              onClick={() => {
+                if (!projectsRoot || loadingProjects) {
+                  return;
+                }
+
+                setProjectPickerOpen((current) => {
+                  const next = !current;
+                  if (next) {
+                    setProjectQuery("");
+                  }
+                  return next;
+                });
+              }}
+              aria-label={projectPickerOpen ? "Zwiń listę projektów" : "Rozwiń listę projektów"}
+              disabled={!projectsRoot || loadingProjects}
+            >
+              ▾
+            </button>
+
+            {projectPickerOpen && (
+              <div className="project-picker-menu">
+                {filteredProjects.length === 0 ? (
+                  <div className="project-picker-empty">Brak pasujących projektów.</div>
+                ) : (
+                  filteredProjects.map((project) => (
+                    <button
+                      key={project}
+                      type="button"
+                      className={`project-option ${project === selectedProject ? "active" : ""}`}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => void handleProjectSelect(project)}
+                    >
+                      {project}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        </div>
 
         <button
-          className="primary-button"
-          onClick={handleScan}
+          className="ghost-button"
+          onClick={() => void handleRefreshCurrentProject()}
           disabled={!selectedProject || scanning || loadingProjects}
         >
-          {scanning ? "Skanowanie..." : "Skanuj projekt"}
-        </button>
-
-        <button className="ghost-button" onClick={() => void refreshProjects(selectedProject)}>
-          Odswiez liste
+          {scanning ? "Odświeżanie..." : "Odśwież"}
         </button>
 
         <label className="field search-field">
@@ -280,7 +372,7 @@ export function App() {
           <input
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Nazwa pliku, sciezka, folder..."
+            placeholder="Nazwa pliku, ścieżka, folder..."
           />
         </label>
 
@@ -290,14 +382,18 @@ export function App() {
             checked={showInvalidOnly}
             onChange={(event) => setShowInvalidOnly(event.target.checked)}
           />
-          <span>Tylko blednie nazwane</span>
+          <span>Tylko błędnie nazwane</span>
         </label>
+
+        <button className="secondary-button secondary-button-light" onClick={handleChooseRoot}>
+          Zmień folder
+        </button>
       </section>
 
       {errorMessage && <div className="banner error">{errorMessage}</div>}
       {!projectsRoot && (
         <div className="banner warning">
-          Przy pierwszym uruchomieniu wskaz folder <strong>ESP - Realizacje</strong>. Program zapamieta go na przyszlosc.
+          Przy pierwszym uruchomieniu wskaż folder <strong>ESP - Realizacje</strong>. Program zapamięta go na przyszłość.
         </div>
       )}
 
@@ -323,7 +419,7 @@ export function App() {
               <strong>{scanResult?.validCount ?? 0}</strong>
             </article>
             <article className="summary-card invalid">
-              <span>Bledne</span>
+              <span>Błędne</span>
               <strong>{scanResult?.invalidCount ?? 0}</strong>
             </article>
             <article className="summary-card">
@@ -372,21 +468,21 @@ export function App() {
               <h2>{scanResult ? scanResult.projectName : "Brak skanu"}</h2>
             </div>
             <div className="status-strip">
-              <span>{filteredFiles.length} plikow po filtrach</span>
+              <span>{filteredFiles.length} plików po filtrach</span>
               {scanResult && <span>Skan: {new Date(scanResult.scannedAt).toLocaleString("pl-PL")}</span>}
             </div>
           </div>
 
           {scanResult?.missingFolders?.length ? (
             <div className="banner muted">
-              Niektore oczekiwane foldery nie istnialy w projekcie. To nie blokuje dzialania programu, ale warto to sprawdzic.
+              Niektóre oczekiwane foldery nie istniały w projekcie. To nie blokuje działania programu, ale warto to sprawdzić.
             </div>
           ) : null}
 
           {!scanResult ? (
             <div className="empty-state">
               <h3>Program jest gotowy</h3>
-              <p>Wybierz projekt i uruchom skanowanie. Zeskanujemy tylko foldery EDT/PDF oraz 6 glownych branz bez podfolderow.</p>
+              <p>Wybierz projekt. Skanowanie uruchomi się automatycznie i obejmie tylko foldery EDT i PDF oraz 6 głównych branż bez podfolderów.</p>
             </div>
           ) : (
             <div className="table-wrap">
@@ -394,11 +490,11 @@ export function App() {
                 <thead>
                   <tr>
                     <th>Plik</th>
-                    <th>Poprawnosc</th>
-                    <th>Zrodlo</th>
+                    <th>Poprawność</th>
+                    <th>Źródło</th>
                     <th>Folder</th>
                     <th>Faza</th>
-                    <th>Branza</th>
+                    <th>Branża</th>
                     <th>Typ</th>
                     <th>Poziom</th>
                     <th>Nr rysunku</th>
@@ -411,7 +507,7 @@ export function App() {
                   {filteredFiles.length === 0 ? (
                     <tr>
                       <td colSpan={12}>
-                        <div className="empty-inline">Brak plikow pasujacych do wybranych filtrow.</div>
+                        <div className="empty-inline">Brak plików pasujących do wybranych filtrów.</div>
                       </td>
                     </tr>
                   ) : (
@@ -425,7 +521,7 @@ export function App() {
                         </td>
                         <td>
                           <span className={`status-pill ${file.isValid ? "valid" : "invalid"}`}>
-                            {file.isValid ? "OK" : "Bledna nazwa"}
+                            {file.isValid ? "OK" : "Błędna nazwa"}
                           </span>
                           {!file.isValid && file.invalidReason ? (
                             <span className="muted-line">{file.invalidReason}</span>
@@ -443,10 +539,10 @@ export function App() {
                         <td>
                           <div className="actions">
                             <button onClick={() => void window.fileFilterApi.openFile(file.absolutePath)}>
-                              Otworz plik
+                              Otwórz plik
                             </button>
                             <button onClick={() => void window.fileFilterApi.openFolder(file.folderPath)}>
-                              Otworz folder
+                              Otwórz folder
                             </button>
                           </div>
                         </td>

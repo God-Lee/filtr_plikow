@@ -93,7 +93,7 @@ function parseFileName(filename, projectNumber) {
   if (segments.length !== SEGMENT_RULES.length) {
     return {
       isValid: false,
-      invalidReason: `Oczekiwano ${SEGMENT_RULES.length} segmentow oddzielonych '-'`,
+      invalidReason: `Oczekiwano ${SEGMENT_RULES.length} segmentów oddzielonych '-'`,
       baseName,
       extension,
       rawSegments: segments,
@@ -105,7 +105,7 @@ function parseFileName(filename, projectNumber) {
     if (!value || !SEGMENT_RULES[index].test(value)) {
       return {
         isValid: false,
-        invalidReason: `Segment ${index + 1} ma nieprawidlowy format`,
+        invalidReason: `Segment ${index + 1} ma nieprawidłowy format`,
         baseName,
         extension,
         rawSegments: segments,
@@ -116,7 +116,7 @@ function parseFileName(filename, projectNumber) {
   if (projectNumber && segments[0] !== projectNumber) {
     return {
       isValid: false,
-      invalidReason: "Numer projektu w nazwie pliku nie zgadza sie z wybranym projektem",
+      invalidReason: "Numer projektu w nazwie pliku nie zgadza się z wybranym projektem",
       baseName,
       extension,
       rawSegments: segments,
