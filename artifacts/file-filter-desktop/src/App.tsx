@@ -61,8 +61,7 @@ type FilterGroup = {
 };
 
 const FILTER_GROUPS: FilterGroup[] = [
-  { key: "sourceKey", label: "Źródło", getValue: (file) => file.sourceKey },
-  { key: "disciplineFolder", label: "Folder branżowy", getValue: (file) => file.disciplineFolder },
+  { key: "sourceKey", label: "Typ plików", getValue: (file) => file.sourceLabel },
   { key: "extensionLabel", label: "Rozszerzenie", getValue: (file) => file.extensionLabel },
   { key: "phase", label: "Faza", getValue: (file) => file.parsedSegments?.phase ?? "Błędnie nazwane" },
   { key: "disciplineCode", label: "Branża", getValue: (file) => file.parsedSegments?.disciplineCode ?? "Błędnie nazwane" },
@@ -82,7 +81,14 @@ function normalize(value: string) {
 function extractOptions(files: FileRecord[], group: FilterGroup) {
   const values = new Set<string>();
   files.forEach((file) => values.add(group.getValue(file)));
-  return Array.from(values).sort((left, right) => left.localeCompare(right, "pl"));
+
+  const options = Array.from(values);
+  if (group.key === "sourceKey") {
+    const sourceOrder = ["PDF", "Pozostałe"];
+    return options.sort((left, right) => sourceOrder.indexOf(left) - sourceOrder.indexOf(right));
+  }
+
+  return options.sort((left, right) => left.localeCompare(right, "pl"));
 }
 
 export function App() {
@@ -160,7 +166,7 @@ export function App() {
         const searchable = [
           file.fileName,
           file.disciplineFolder,
-          file.sourceKey,
+          file.sourceLabel,
           file.absolutePath,
           file.invalidReason ?? "",
         ]
@@ -376,15 +382,6 @@ export function App() {
           />
         </label>
 
-        <label className="toggle-card">
-          <input
-            type="checkbox"
-            checked={showInvalidOnly}
-            onChange={(event) => setShowInvalidOnly(event.target.checked)}
-          />
-          <span>Tylko błędnie nazwane</span>
-        </label>
-
         <button className="secondary-button secondary-button-light" onClick={handleChooseRoot}>
           Zmień folder
         </button>
@@ -400,10 +397,7 @@ export function App() {
       <main className="layout">
         <aside className="filters-panel">
           <div className="panel-header">
-            <div>
-              <p className="eyebrow">Filtry</p>
-              <h2>Slicery</h2>
-            </div>
+            <h2 className="filters-title">Filtry</h2>
             <button className="link-button" onClick={clearFilters}>
               Resetuj
             </button>
@@ -459,6 +453,15 @@ export function App() {
               );
             })}
           </div>
+
+          <label className="toggle-card filter-toggle-card">
+            <input
+              type="checkbox"
+              checked={showInvalidOnly}
+              onChange={(event) => setShowInvalidOnly(event.target.checked)}
+            />
+            <span>Tylko błędnie nazwane</span>
+          </label>
         </aside>
 
         <section className="results-panel">
@@ -491,7 +494,7 @@ export function App() {
                   <tr>
                     <th>Plik</th>
                     <th>Poprawność</th>
-                    <th>Źródło</th>
+                    <th>Typ plików</th>
                     <th>Folder</th>
                     <th>Faza</th>
                     <th>Branża</th>
@@ -527,7 +530,7 @@ export function App() {
                             <span className="muted-line">{file.invalidReason}</span>
                           ) : null}
                         </td>
-                        <td>{file.sourceKey}</td>
+                        <td>{file.sourceLabel}</td>
                         <td>{file.disciplineFolder}</td>
                         <td>{file.parsedSegments?.phase ?? "-"}</td>
                         <td>{file.parsedSegments?.disciplineCode ?? "-"}</td>

@@ -3,8 +3,8 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const SOURCE_FOLDERS = [
-  { key: "EDT", folderName: "2. EDT" },
-  { key: "PDF", folderName: "3. PDF" },
+  { key: "PDF", folderName: "3. PDF", displayLabel: "PDF" },
+  { key: "EDT", folderName: "2. EDT", displayLabel: "Pozostałe" },
 ];
 
 const DISCIPLINE_FOLDERS = [
@@ -180,7 +180,7 @@ async function scanProject(projectsRoot, projectName) {
           projectName,
           projectNumber: projectNumber ?? "",
           sourceKey: source.key,
-          sourceLabel: source.folderName,
+          sourceLabel: source.displayLabel,
           disciplineFolder,
           extension: parsed.extension.toLowerCase(),
           extensionLabel: parsed.extension || "(brak)",
