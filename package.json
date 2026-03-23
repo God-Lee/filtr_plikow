@@ -1,0 +1,12 @@
+{
+  "name": "file-code-filter",
+  "version": "0.1.0",
+  "description": "Desktop file filter for Ekoinbud project folders",
+  "scripts": {
+    "dev": "pnpm --filter @workspace/file-filter-desktop run dev",
+    "typecheck": "pnpm --filter @workspace/file-filter-desktop run typecheck",
+    "build": "pnpm --filter @workspace/file-filter-desktop run build",
+    "dist": "pnpm --filter @workspace/file-filter-desktop run dist"
+  },
+  "private": true
+}

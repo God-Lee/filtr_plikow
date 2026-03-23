@@ -1,0 +1,4 @@
+packages:
+  - artifacts/file-filter-desktop
+
+autoInstallPeers: false

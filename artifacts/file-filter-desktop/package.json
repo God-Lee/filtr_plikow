@@ -1,0 +1,34 @@
+{
+  "name": "@workspace/file-filter-desktop",
+  "version": "0.1.0",
+  "description": "Desktop file filter for Ekoinbud project folders",
+  "author": "OpenAI Codex",
+  "private": true,
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"pnpm run dev:renderer\" \"pnpm run dev:electron\"",
+    "dev:renderer": "vite --host 127.0.0.1 --port 5173",
+    "dev:electron": "wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
+    "build": "vite build --config vite.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dist": "pnpm run build && electron-builder --config electron-builder.json"
+  },
+  "dependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.3",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^37.4.0",
+    "electron-builder": "^26.0.12",
+    "typescript": "~5.9.2",
+    "vite": "^7.3.0",
+    "wait-on": "^8.0.5"
+  }
+}
