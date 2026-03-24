@@ -9,6 +9,12 @@
     "electron/**/*",
     "package.json"
   ],
+  "extraResources": [
+    {
+      "from": "assets",
+      "to": "assets"
+    }
+  ],
   "win": {
     "signAndEditExecutable": false,
     "target": [

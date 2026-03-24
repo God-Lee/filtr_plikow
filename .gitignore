@@ -55,3 +55,5 @@ Thumbs.db
 /artifacts/file-filter-desktop/release/
 /artifacts/file-filter-desktop/release/win-unpacked/
 /artifacts/file-filter-desktop/release/builder-debug.yml
+/.tmp_excel/
+/Źródła/
