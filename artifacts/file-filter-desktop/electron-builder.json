@@ -7,6 +7,7 @@
   "files": [
     "dist/**/*",
     "electron/**/*",
+    "shared/**/*",
     "package.json"
   ],
   "extraResources": [

@@ -1,6 +1,7 @@
 const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const namingStandards = require("../shared/naming-standards.json");
 
 const SOURCE_FOLDERS = [
   { key: "PDF", folderName: "3. PDF", displayLabel: "PDF" },
@@ -16,7 +17,8 @@ const DISCIPLINE_FOLDERS = [
   "6. Koordynacja",
 ];
 
-const IGNORED_EXTENSIONS = new Set([".bak", ".dwl", ".dwl2", ".pcp", ".log"]);
+const IGNORED_EXTENSIONS = new Set([".bak", ".dwl", ".dwl2", ".pcp", ".log", ".pat"]);
+const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png"]);
 
 const SEGMENT_RULES = [
   /^\d{5}$/,
@@ -24,9 +26,9 @@ const SEGMENT_RULES = [
   /^[A-Z0-9]{1,4}$/,
   /^[A-Z0-9]{2,5}$/,
   /^[A-Z0-9]{1,4}$/,
-  /^[A-Z0-9]{2,6}$/,
-  /^R[A-Z0-9]{2,3}$/,
-  /^S[A-Z0-9]{1,3}$/,
+  /^[A-Z]\d{2}$/,
+  /^[A-Z][A-Z0-9]{2,3}$/,
+  /^[A-Z][A-Z0-9]{1,3}$/,
 ];
 
 const SEGMENT_KEYS = [
@@ -40,7 +42,36 @@ const SEGMENT_KEYS = [
   "status",
 ];
 
+const SEGMENT_DISPLAY_NAMES = {
+  projectNumber: "Numer projektu",
+  phase: "Faza",
+  disciplineCode: "Branża",
+  documentType: "Typ",
+  level: "Poziom",
+  drawingNumber: "Numer",
+  revision: "Rewizja",
+  status: "Status",
+};
+
+const ALLOWED_SEGMENT_VALUES = {
+  phase: new Set(Object.keys(namingStandards.phases)),
+  disciplineCode: new Set(Object.keys(namingStandards.disciplines)),
+  documentType: new Set(Object.keys(namingStandards.documentTypes)),
+  level: new Set(Object.keys(namingStandards.levels)),
+  status: new Set(Object.keys(namingStandards.statuses)),
+};
+
 let mainWindow = null;
+
+function sanitizeFavoriteProjects(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(value.filter((projectName) => typeof projectName === "string" && projectName.trim().length > 0)),
+  ).slice(0, 5);
+}
 
 function getConfigPath() {
   return path.join(app.getPath("userData"), "settings.json");
@@ -52,16 +83,22 @@ async function loadSettings() {
     const parsed = JSON.parse(raw);
     return {
       projectsRoot: typeof parsed.projectsRoot === "string" ? parsed.projectsRoot : "",
+      favoriteProjects: sanitizeFavoriteProjects(parsed.favoriteProjects),
     };
   } catch {
-    return { projectsRoot: "" };
+    return { projectsRoot: "", favoriteProjects: [] };
   }
 }
 
 async function saveSettings(settings) {
+  const nextSettings = {
+    projectsRoot: typeof settings.projectsRoot === "string" ? settings.projectsRoot : "",
+    favoriteProjects: sanitizeFavoriteProjects(settings.favoriteProjects),
+  };
+
   await fs.mkdir(path.dirname(getConfigPath()), { recursive: true });
-  await fs.writeFile(getConfigPath(), JSON.stringify(settings, null, 2), "utf8");
-  return settings;
+  await fs.writeFile(getConfigPath(), JSON.stringify(nextSettings, null, 2), "utf8");
+  return nextSettings;
 }
 
 async function directoryExists(targetPath) {
@@ -87,10 +124,41 @@ function getProjectNumber(projectName) {
   return match ? match[1] : null;
 }
 
+function isDrawingNumberValidForDiscipline(disciplineCode, drawingNumber) {
+  const disciplinePrefix = disciplineCode?.[0];
+  const drawingPrefix = drawingNumber?.[0];
+
+  if (!disciplinePrefix || !drawingPrefix) {
+    return false;
+  }
+
+  return drawingPrefix === "X" || drawingPrefix === disciplinePrefix;
+}
+
+function isRevisionCodeValid(revision) {
+  return /^(?:[RW]\d{2}|W0X)$/.test(revision ?? "");
+}
+
+function buildParsedSegments(segments, invalidSegmentKey) {
+  return Object.fromEntries(
+    SEGMENT_KEYS.map((key, index) => [
+      key,
+      key === invalidSegmentKey ? null : (segments[index] ?? null),
+    ]),
+  );
+}
+
+function summarizeSegmentIssues(segmentIssues) {
+  return `Błędy w segmentach:\n${Array.from(segmentIssues.entries())
+    .map(([segmentKey, issue]) => `- ${SEGMENT_DISPLAY_NAMES[segmentKey]} (${issue})`)
+    .join("\n")}`;
+}
+
 function parseFileName(filename, projectNumber) {
   const extension = path.extname(filename);
   const baseName = path.basename(filename, extension);
-  const segments = baseName.split("-");
+  const segments = baseName.split("-").map((segment) => segment.trim());
+  const parsedSegments = buildParsedSegments(segments);
 
   if (segments.length !== SEGMENT_RULES.length) {
     return {
@@ -99,29 +167,68 @@ function parseFileName(filename, projectNumber) {
       baseName,
       extension,
       rawSegments: segments,
+      parsedSegments,
     };
   }
+
+  const segmentIssues = new Map();
 
   for (let index = 0; index < SEGMENT_RULES.length; index += 1) {
     const value = segments[index]?.trim() ?? "";
     if (!value || !SEGMENT_RULES[index].test(value)) {
-      return {
-        isValid: false,
-        invalidReason: `Segment ${index + 1} ma nieprawidłowy format`,
-        baseName,
-        extension,
-        rawSegments: segments,
-      };
+      const segmentKey = SEGMENT_KEYS[index];
+      segmentIssues.set(segmentKey, "ma nieprawidłowy format");
     }
   }
 
   if (projectNumber && segments[0] !== projectNumber) {
+    segmentIssues.set("projectNumber", "nie zgadza się z wybranym projektem");
+  }
+
+  for (const [segmentKey, allowedValues] of Object.entries(ALLOWED_SEGMENT_VALUES)) {
+    if (segmentIssues.has(segmentKey)) {
+      continue;
+    }
+
+    if (allowedValues.has(parsedSegments[segmentKey])) {
+      continue;
+    }
+
+    segmentIssues.set(segmentKey, "ma nieznaną wartość");
+  }
+
+  if (!segmentIssues.has("revision") && !isRevisionCodeValid(parsedSegments.revision)) {
+    segmentIssues.set("revision", "ma nieprawidłowy format");
+  }
+
+  if (
+    !segmentIssues.has("disciplineCode") &&
+    !segmentIssues.has("drawingNumber") &&
+    !isDrawingNumberValidForDiscipline(parsedSegments.disciplineCode, parsedSegments.drawingNumber)
+  ) {
+    segmentIssues.set("drawingNumber", "musi zaczynać się od pierwszej litery branży albo od X");
+  }
+
+  if (segmentIssues.size === 1) {
+    const [[segmentKey, issue]] = Array.from(segmentIssues.entries());
     return {
       isValid: false,
-      invalidReason: "Numer projektu w nazwie pliku nie zgadza się z wybranym projektem",
+      invalidReason: `Segment „${SEGMENT_DISPLAY_NAMES[segmentKey]}” ${issue}`,
       baseName,
       extension,
       rawSegments: segments,
+      parsedSegments: buildParsedSegments(segments, segmentKey),
+    };
+  }
+
+  if (segmentIssues.size > 1) {
+    return {
+      isValid: false,
+      invalidReason: summarizeSegmentIssues(segmentIssues),
+      baseName,
+      extension,
+      rawSegments: segments,
+      parsedSegments: null,
     };
   }
 
@@ -131,9 +238,21 @@ function parseFileName(filename, projectNumber) {
     baseName,
     extension,
     rawSegments: segments,
-    parsedSegments: Object.fromEntries(
-      SEGMENT_KEYS.map((key, index) => [key, segments[index]]),
-    ),
+    parsedSegments,
+  };
+}
+
+function buildMislocatedImageResult(filename) {
+  const extension = path.extname(filename);
+  const baseName = path.basename(filename, extension);
+
+  return {
+    isValid: false,
+    invalidReason: "Błędna lokalizacja",
+    baseName,
+    extension,
+    rawSegments: [baseName],
+    parsedSegments: null,
   };
 }
 
@@ -177,7 +296,9 @@ async function scanProject(projectsRoot, projectName) {
           continue;
         }
 
-        const parsed = parseFileName(entry.name, projectNumber);
+        const parsed = IMAGE_EXTENSIONS.has(extension)
+          ? buildMislocatedImageResult(entry.name)
+          : parseFileName(entry.name, projectNumber);
 
         results.push({
           id: absolutePath,
@@ -225,8 +346,10 @@ async function chooseProjectsRoot() {
     return loadSettings();
   }
 
+  const currentSettings = await loadSettings();
   const settings = {
     projectsRoot: selected.filePaths[0],
+    favoriteProjects: currentSettings.favoriteProjects,
   };
 
   return saveSettings(settings);
@@ -259,6 +382,13 @@ function createWindow() {
 
 ipcMain.handle("settings:get", async () => loadSettings());
 ipcMain.handle("settings:chooseRoot", async () => chooseProjectsRoot());
+ipcMain.handle("settings:updateFavorites", async (_event, favoriteProjects) => {
+  const currentSettings = await loadSettings();
+  return saveSettings({
+    ...currentSettings,
+    favoriteProjects,
+  });
+});
 ipcMain.handle("projects:list", async () => {
   const settings = await loadSettings();
   if (!settings.projectsRoot) {

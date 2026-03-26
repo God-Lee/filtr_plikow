@@ -7,11 +7,12 @@
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k \"pnpm run dev:renderer\" \"pnpm run dev:electron\"",
+    "sync-standards": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-naming-standards.ps1",
+    "dev": "pnpm run sync-standards && concurrently -k \"pnpm run dev:renderer\" \"pnpm run dev:electron\"",
     "dev:renderer": "vite --host 127.0.0.1 --port 5173",
     "dev:electron": "wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
-    "build": "vite build --config vite.config.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "pnpm run sync-standards && vite build --config vite.config.ts",
+    "typecheck": "pnpm run sync-standards && tsc -p tsconfig.json --noEmit",
     "dist": "pnpm run build && electron-builder --config electron-builder.json"
   },
   "dependencies": {
