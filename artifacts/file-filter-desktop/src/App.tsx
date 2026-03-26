@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import namingStandards from "../shared/naming-standards.json";
 
 declare global {
   interface Window {
     fileFilterApi: {
-      getSettings: () => Promise<{ projectsRoot: string }>;
-      chooseProjectsRoot: () => Promise<{ projectsRoot: string }>;
+      getSettings: () => Promise<AppSettings>;
+      chooseProjectsRoot: () => Promise<AppSettings>;
+      updateFavoriteProjects: (favoriteProjects: string[]) => Promise<AppSettings>;
       listProjects: () => Promise<string[]>;
       scanProject: (projectName: string) => Promise<ScanResult>;
       openFile: (targetPath: string) => Promise<void>;
@@ -12,6 +14,11 @@ declare global {
     };
   }
 }
+
+type AppSettings = {
+  projectsRoot: string;
+  favoriteProjects: string[];
+};
 
 type FileRecord = {
   id: string;
@@ -33,14 +40,14 @@ type FileRecord = {
 };
 
 type ParsedSegments = {
-  projectNumber: string;
-  phase: string;
-  disciplineCode: string;
-  documentType: string;
-  level: string;
-  drawingNumber: string;
-  revision: string;
-  status: string;
+  projectNumber: string | null;
+  phase: string | null;
+  disciplineCode: string | null;
+  documentType: string | null;
+  level: string | null;
+  drawingNumber: string | null;
+  revision: string | null;
+  status: string | null;
 };
 
 type ScanResult = {
@@ -60,6 +67,30 @@ type FilterGroup = {
   getValue: (file: FileRecord) => string;
 };
 
+type SortDirection = "asc" | "desc";
+
+type SortKey =
+  | "fileName"
+  | "isValid"
+  | "phase"
+  | "disciplineCode"
+  | "documentType"
+  | "level"
+  | "drawingNumber"
+  | "revision"
+  | "status";
+
+type SortConfig = {
+  key: SortKey;
+  direction: SortDirection;
+};
+
+type FavoriteProjectCard = {
+  projectName: string;
+  number: string;
+  label: string;
+};
+
 const EXTENSION_GROUP_LABELS: Record<string, string> = {
   ".doc": "Word",
   ".docx": "Word",
@@ -71,117 +102,23 @@ const EXTENSION_GROUP_LABELS: Record<string, string> = {
   ".png": "Obraz",
 };
 
-const PHASE_LABELS: Record<string, string> = {
-  CR: "CR - Koordynacja",
-  DP: "DP - Dokumentacja Powykonawcza",
-  IN: "IN - Inwentaryzacja",
-  PB: "PB - Projekt Arch-Bud, PZT",
-  PF: "PF - Program Funkcjonalno-Użytkowy",
-  PK: "PK - Projekt Koncepcyjny",
-  PT: "PT - Projekt Techniczny",
-  PW: "PW - Projekt Wykonawczy",
-  PZ: "PZ - Projekt zamienny",
-  RO: "RO - Projekt rozbiórek",
-  WD: "WD - Wdrożenie",
-  ZL: "ZL - Dokumenty formalne, załączniki",
-};
+const PHASE_LABELS: Record<string, string> = namingStandards.phases;
+const DISCIPLINE_LABELS: Record<string, string> = namingStandards.disciplines;
+const DOCUMENT_TYPE_LABELS: Record<string, string> = namingStandards.documentTypes;
+const LEVEL_LABELS: Record<string, string> = namingStandards.levels;
+const REVISION_LABELS: Record<string, string> = namingStandards.revisions;
+const STATUS_LABELS: Record<string, string> = namingStandards.statuses;
 
-const DISCIPLINE_LABELS: Record<string, string> = {
-  AK: "AK - Architektura krajobrazu",
-  AR: "AR - Architektura",
-  AW: "AW - Projekt wnętrz",
-  CR: "CR - Koordynacja",
-  DR: "DR - Drogowa",
-  EL: "EL - Instalacje elektryczne",
-  ET: "ET - instalacje teletechniczne",
-  GE: "GE - Geodezja",
-  GT: "GT - Geotechnika / geologia",
-  KF: "KF - Konstrukcja fundamentów",
-  KO: "KO - Konstrukcja",
-  KP: "KP - Konstrukcja pali",
-  KW: "KW - Konstrukcja wiązarów",
-  PO: "PO - pożarowe ogólne",
-  PS: "PS - SSP, Dso",
-  SA: "SA - Instalacje Sanitarne",
-  SD: "SD - Instalacje wodociągowe",
-  SG: "SG - Instalacja gazowa",
-  SK: "SK - Instalacja kanalizacyjna",
-  SO: "SO - instalacje ogrzewania",
-  SW: "SW - Wentylacja i Klimatyzacja",
-  TK: "TK - Technologia kuchni",
-  XX: "XX - Nie dotyczy/wiele branż",
-};
-
-const DOCUMENT_TYPE_LABELS: Record<string, string> = {
-  AOP: "AOP - Analiza optymalizacyjno-porównawcza",
-  BIO: "BIO - BIOZ",
-  BWD: "BWD - Bilans wód deszczowych",
-  CHE: "CHE - Charakterystyka energetyczna",
-  CSE: "CSE - Przekrój",
-  DET: "DET - Detal",
-  ELE: "ELE - Elewacje",
-  IFC: "IFC - Plik IFC",
-  INN: "INN - Inne",
-  KST: "KST - Kosztorys",
-  MAP: "MAP - Mapa",
-  MOD: "MOD - Model",
-  OBR: "OBR - Obrazek, logo",
-  OPP: "OPP - Opis projektu",
-  OPZ: "OPZ - Opis PZT",
-  ORR: "ORR - Organizacja ruchu (SOR/TOR)",
-  PDW: "PDW - Przygotowanie do wdrożenia",
-  PRD: "PRD - Przedmiar",
-  PRF: "PRF - Profil",
-  PRO: "PRO - Projekt",
-  PZT: "PZT - PZT, model PZT",
-  RFU: "RFU - Rzut fundamentów",
-  ROG: "ROG - Rzut ogólny",
-  RPO: "RPO - Rzut posadzek",
-  RSU: "RSU - Rzut sufitów",
-  SCH: "SCH - Rozwinięcia/schemat",
-  STT: "STT - Strona tytułowa",
-  STW: "STW - Stwiorb",
-  VIS: "VIS - Wizualizacja",
-  ZJA: "ZJA - Projekt zjazdu",
-  ZSA: "ZSA - Spis arkuszy",
-  ZSD: "ZSD - Zestawienie stolarki drzwiowej",
-  ZSO: "ZSO - Zestawienie stolarki okiennej",
-  ZST: "ZST - Zestawienie",
-  ZSW: "ZSW - Zestawienie witryn",
-};
-
-const LEVEL_LABELS: Record<string, string> = {
-  P0: "P0 - Parter",
-  P1: "P1 - Piętro 1",
-  P2: "P2 - Piętro 2",
-  M0: "M0 - Półpiętro nad parterem",
-  M1: "M1 - Półpiętro nad 1 piętrem",
-  D0: "D0 - Dach",
-  B1: "B1 - Pierwsza kondygnacja podziemna",
-  B2: "B2 - Druga kondygnacja podziemna",
-  XX: "XX - Nie dotyczy/wiele poziomów",
-};
-
-const REVISION_LABELS: Record<string, string> = {
-  R00: "R00 - Rewizja zerowa",
-  R01: "R01 - pierwsza rewizja",
-  W01: "W01 - pierwsza wersja koncepcji (domyślna)",
-  W0X: "W0X - kolejne wersje koncepcji",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  S0: "S0 - plik roboczy",
-  S1: "S1 - wersja robocza, tylko do koordynacji międzybranżowej",
-  S2: "S2 - wersja robocza, wydana do zatwierdzenia",
-  A1: "A1 - wersja zatwierdzona, na potrzeby budowy",
-};
-
-function getMappedFilterLabel(value: string | undefined, labels: Record<string, string>) {
+function getMappedFilterLabel(value: string | null | undefined, labels: Record<string, string>) {
   if (!value) {
     return "Błędnie nazwane";
   }
 
   return labels[value] ?? "Błędnie nazwane";
+}
+
+function isRevisionCodeValid(revision: string | undefined) {
+  return /^(?:[RW]\d{2}|W0X)$/.test(revision ?? "");
 }
 
 function getExtensionFilterLabel(file: FileRecord) {
@@ -205,12 +142,62 @@ function getLevelFilterLabel(file: FileRecord) {
 }
 
 function getRevisionFilterLabel(file: FileRecord) {
-  return getMappedFilterLabel(file.parsedSegments?.revision, REVISION_LABELS);
+  const revision = file.parsedSegments?.revision;
+  if (!revision) {
+    return "Błędnie nazwane";
+  }
+
+  return REVISION_LABELS[revision] ?? (isRevisionCodeValid(revision) ? revision : "Błędnie nazwane");
 }
 
 function getStatusFilterLabel(file: FileRecord) {
   return getMappedFilterLabel(file.parsedSegments?.status, STATUS_LABELS);
 }
+
+function getValidationLabel(file: FileRecord) {
+  if (file.isValid) {
+    return "OK";
+  }
+
+  return file.invalidReason === "Błędna lokalizacja" ? "Błędna lokalizacja" : "Błędna nazwa";
+}
+
+function getSortValue(file: FileRecord, sortKey: SortKey) {
+  switch (sortKey) {
+    case "fileName":
+      return file.fileName;
+    case "isValid":
+      return getValidationLabel(file);
+    case "phase":
+      return file.parsedSegments?.phase ?? "";
+    case "disciplineCode":
+      return file.parsedSegments?.disciplineCode ?? "";
+    case "documentType":
+      return file.parsedSegments?.documentType ?? "";
+    case "level":
+      return file.parsedSegments?.level ?? "";
+    case "drawingNumber":
+      return file.parsedSegments?.drawingNumber ?? "";
+    case "revision":
+      return file.parsedSegments?.revision ?? "";
+    case "status":
+      return file.parsedSegments?.status ?? "";
+    default:
+      return "";
+  }
+}
+
+const SORTABLE_COLUMNS: Array<{ key: SortKey; label: string; className?: string }> = [
+  { key: "fileName", label: "Plik", className: "column-file" },
+  { key: "isValid", label: "Poprawność", className: "column-status" },
+  { key: "phase", label: "Faza" },
+  { key: "disciplineCode", label: "Branża" },
+  { key: "documentType", label: "Typ" },
+  { key: "level", label: "Poziom" },
+  { key: "drawingNumber", label: "Nr rysunku" },
+  { key: "revision", label: "Rewizja" },
+  { key: "status", label: "Status" },
+];
 
 const FILTER_GROUPS: FilterGroup[] = [
   { key: "sourceKey", label: "Typ plików", getValue: (file) => file.sourceLabel },
@@ -227,7 +214,150 @@ const INITIAL_FILTERS = Object.fromEntries(FILTER_GROUPS.map((group) => [group.k
 const INITIAL_EXPANDED_GROUPS = Object.fromEntries(FILTER_GROUPS.map((group) => [group.key, true]));
 
 function normalize(value: string) {
-  return value.toLocaleLowerCase("pl");
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pl");
+}
+
+function tokenizeSearchText(value: string) {
+  return normalize(value)
+    .split(/[^a-z0-9]+/i)
+    .filter(Boolean);
+}
+
+function matchesSearchToken(queryToken: string, searchableToken: string) {
+  if (searchableToken.includes(queryToken)) {
+    return true;
+  }
+
+  if (
+    queryToken.length >= 4 &&
+    searchableToken.length >= 4 &&
+    queryToken.startsWith(searchableToken) &&
+    queryToken.length - searchableToken.length <= 2
+  ) {
+    return true;
+  }
+
+  if (searchableToken.length >= 4 && searchableToken.startsWith(queryToken)) {
+    return true;
+  }
+
+  return false;
+}
+
+function getParsedSegmentLabels(file: FileRecord) {
+  return [
+    file.parsedSegments?.phase ? PHASE_LABELS[file.parsedSegments.phase] ?? file.parsedSegments.phase : "",
+    file.parsedSegments?.disciplineCode
+      ? DISCIPLINE_LABELS[file.parsedSegments.disciplineCode] ?? file.parsedSegments.disciplineCode
+      : "",
+    file.parsedSegments?.documentType
+      ? DOCUMENT_TYPE_LABELS[file.parsedSegments.documentType] ?? file.parsedSegments.documentType
+      : "",
+    file.parsedSegments?.level ? LEVEL_LABELS[file.parsedSegments.level] ?? file.parsedSegments.level : "",
+    file.parsedSegments?.revision
+      ? REVISION_LABELS[file.parsedSegments.revision] ?? file.parsedSegments.revision
+      : "",
+    file.parsedSegments?.status ? STATUS_LABELS[file.parsedSegments.status] ?? file.parsedSegments.status : "",
+  ];
+}
+
+function buildFileSearchTokens(file: FileRecord) {
+  return [
+    file.fileName,
+    file.baseName,
+    file.projectName,
+    file.projectNumber,
+    file.disciplineFolder,
+    file.sourceKey,
+    file.sourceLabel,
+    file.extension,
+    file.extensionLabel,
+    file.absolutePath,
+    file.folderPath,
+    file.invalidReason ?? "",
+    file.rawSegments.join(" "),
+    file.parsedSegments?.phase ?? "",
+    file.parsedSegments?.disciplineCode ?? "",
+    file.parsedSegments?.documentType ?? "",
+    file.parsedSegments?.level ?? "",
+    file.parsedSegments?.drawingNumber ?? "",
+    file.parsedSegments?.revision ?? "",
+    file.parsedSegments?.status ?? "",
+    ...getParsedSegmentLabels(file),
+  ].flatMap((value) => tokenizeSearchText(value));
+}
+
+function getPolishFileCountLabel(count: number) {
+  const units = count % 10;
+  const tens = count % 100;
+
+  if (count === 1) {
+    return `${count} plik po filtrach`;
+  }
+
+  if (units >= 2 && units <= 4 && (tens < 12 || tens > 14)) {
+    return `${count} pliki po filtrach`;
+  }
+
+  return `${count} plików po filtrach`;
+}
+
+function getFavoriteProjectCard(projectName: string): FavoriteProjectCard {
+  const [number = projectName, label = projectName] = projectName.split("_");
+
+  return {
+    projectName,
+    number,
+    label,
+  };
+}
+
+function matchesBaseCriteria(file: FileRecord, query: string, showInvalidOnly: boolean, showValidOnly: boolean) {
+  if (showInvalidOnly && file.isValid) {
+    return false;
+  }
+
+  if (showValidOnly && !file.isValid) {
+    return false;
+  }
+
+  if (!query) {
+    return true;
+  }
+
+  const searchableTokens = buildFileSearchTokens(file);
+  const queryTokens = tokenizeSearchText(query);
+
+  return queryTokens.every((queryToken) =>
+    searchableTokens.some((searchableToken) => matchesSearchToken(queryToken, searchableToken)),
+  );
+}
+
+function matchesSelectedFilters(
+  file: FileRecord,
+  filters: Record<string, string[]>,
+  groups: FilterGroup[],
+  excludedGroupKey?: string,
+) {
+  for (const group of groups) {
+    if (group.key === excludedGroupKey) {
+      continue;
+    }
+
+    const selectedValues = filters[group.key] ?? [];
+    if (selectedValues.length === 0) {
+      continue;
+    }
+
+    if (!selectedValues.includes(group.getValue(file))) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function sortWithInvalidLast(options: string[], preferredOrder?: string[]) {
@@ -411,18 +541,23 @@ function extractOptions(files: FileRecord[], group: FilterGroup) {
 export function App() {
   const [projectsRoot, setProjectsRoot] = useState("");
   const [projects, setProjects] = useState<string[]>([]);
+  const [favoriteProjects, setFavoriteProjects] = useState<string[]>([]);
   const [selectedProject, setSelectedProject] = useState("");
   const [projectQuery, setProjectQuery] = useState("");
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [highlightedProjectIndex, setHighlightedProjectIndex] = useState(-1);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [showInvalidOnly, setShowInvalidOnly] = useState(false);
+  const [showValidOnly, setShowValidOnly] = useState(false);
   const [filters, setFilters] = useState<Record<string, string[]>>(INITIAL_FILTERS);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(INITIAL_EXPANDED_GROUPS);
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "fileName", direction: "asc" });
   const projectPickerRef = useRef<HTMLDivElement | null>(null);
+  const projectOptionRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   async function refreshProjects(preferredProject?: string) {
     setLoadingProjects(true);
@@ -435,6 +570,7 @@ export function App() {
       ]);
 
       setProjectsRoot(settings.projectsRoot);
+      setFavoriteProjects(settings.favoriteProjects);
       setProjects(projectNames);
 
       const nextProject =
@@ -459,21 +595,41 @@ export function App() {
     (filters.sourceKey?.length ?? 0) === 1 && filters.sourceKey?.[0] === "PDF";
   const shouldRemovePdfExtensionOption =
     (filters.sourceKey?.length ?? 0) === 1 && filters.sourceKey?.[0] === "Pozostałe";
+  const normalizedSearchQuery = useMemo(() => normalize(searchQuery.trim()), [searchQuery]);
+
+  const baseMatchingFiles = useMemo(() => {
+    const files = scanResult?.files ?? [];
+    return files.filter((file) => matchesBaseCriteria(file, normalizedSearchQuery, showInvalidOnly, showValidOnly));
+  }, [normalizedSearchQuery, scanResult, showInvalidOnly, showValidOnly]);
 
   const filterOptions = useMemo(() => {
-    const files = scanResult?.files ?? [];
-    const nextOptions = Object.fromEntries(FILTER_GROUPS.map((group) => [group.key, extractOptions(files, group)]));
+    const nextOptions = Object.fromEntries(
+      FILTER_GROUPS.map((group) => {
+        const candidateFiles = baseMatchingFiles.filter((file) =>
+          matchesSelectedFilters(file, filters, FILTER_GROUPS, group.key),
+        );
+
+        return [group.key, extractOptions(candidateFiles, group)];
+      }),
+    );
 
     if (shouldRemovePdfExtensionOption) {
       nextOptions.extensionLabel = (nextOptions.extensionLabel ?? []).filter((option) => option !== "PDF");
     }
 
     return nextOptions;
-  }, [scanResult, shouldRemovePdfExtensionOption]);
+  }, [baseMatchingFiles, filters, shouldRemovePdfExtensionOption]);
 
   const visibleFilterGroups = useMemo(
-    () => FILTER_GROUPS.filter((group) => !(group.key === "extensionLabel" && shouldHideExtensionFilter)),
-    [shouldHideExtensionFilter],
+    () =>
+      FILTER_GROUPS.filter((group) => {
+        if (group.key === "extensionLabel" && shouldHideExtensionFilter) {
+          return false;
+        }
+
+        return (filterOptions[group.key] ?? []).length > 0;
+      }),
+    [filterOptions, shouldHideExtensionFilter],
   );
 
   const filteredProjects = useMemo(() => {
@@ -487,62 +643,89 @@ export function App() {
     return projects.filter((project) => normalize(project).includes(query));
   }, [projectQuery, projects, selectedProject]);
 
+  const visibleFavoriteProjects = useMemo(
+    () =>
+      favoriteProjects
+        .filter((project) => projects.includes(project))
+        .slice(0, 5)
+        .map((projectName) => getFavoriteProjectCard(projectName)),
+    [favoriteProjects, projects],
+  );
+
+  const selectedProjectIsFavorite = selectedProject ? favoriteProjects.includes(selectedProject) : false;
+
   const filteredFiles = useMemo(() => {
-    const files = scanResult?.files ?? [];
-    const query = normalize(searchQuery.trim());
+    return baseMatchingFiles.filter((file) => matchesSelectedFilters(file, filters, FILTER_GROUPS));
+  }, [baseMatchingFiles, filters]);
 
-    return files.filter((file) => {
-      if (showInvalidOnly && file.isValid) {
-        return false;
+  const sortedFiles = useMemo(() => {
+    return [...filteredFiles].sort((left, right) => {
+      if (left.isValid !== right.isValid) {
+        return left.isValid ? -1 : 1;
       }
 
-      if (query) {
-        const searchable = [
-          file.fileName,
-          file.disciplineFolder,
-          file.sourceLabel,
-          file.absolutePath,
-          file.invalidReason ?? "",
-        ]
-          .join(" ")
-          .toLocaleLowerCase("pl");
+      const leftValue = getSortValue(left, sortConfig.key);
+      const rightValue = getSortValue(right, sortConfig.key);
+      const directionFactor = sortConfig.direction === "asc" ? 1 : -1;
 
-        if (!searchable.includes(query)) {
-          return false;
-        }
+      const comparison = leftValue.localeCompare(rightValue, "pl", { numeric: true, sensitivity: "base" });
+      if (comparison !== 0) {
+        return comparison * directionFactor;
       }
 
-      for (const group of visibleFilterGroups) {
-        const selectedValues = filters[group.key] ?? [];
-        if (selectedValues.length === 0) {
-          continue;
-        }
-
-        const candidate = group.getValue(file);
-        if (!selectedValues.includes(candidate)) {
-          return false;
-        }
-      }
-
-      return true;
+      return left.fileName.localeCompare(right.fileName, "pl", { numeric: true, sensitivity: "base" });
     });
-  }, [filters, scanResult, searchQuery, showInvalidOnly, visibleFilterGroups]);
+  }, [filteredFiles, sortConfig]);
+
+  useEffect(() => {
+    setFavoriteProjects((current) => current.filter((project) => projects.includes(project)));
+  }, [projects]);
 
   useEffect(() => {
     if (filteredProjects.length === 0) {
+      if (highlightedProjectIndex !== -1) {
+        setHighlightedProjectIndex(-1);
+      }
       return;
     }
 
     if (!filteredProjects.includes(selectedProject)) {
       setSelectedProject("");
     }
-  }, [filteredProjects, selectedProject]);
+
+    if (highlightedProjectIndex >= filteredProjects.length) {
+      setHighlightedProjectIndex(filteredProjects.length - 1);
+    }
+  }, [filteredProjects, highlightedProjectIndex, selectedProject]);
+
+  useEffect(() => {
+    if (!projectPickerOpen) {
+      if (highlightedProjectIndex !== -1) {
+        setHighlightedProjectIndex(-1);
+      }
+      return;
+    }
+
+    if (highlightedProjectIndex < 0) {
+      return;
+    }
+
+    const highlightedProject = filteredProjects[highlightedProjectIndex];
+    if (!highlightedProject) {
+      return;
+    }
+
+    projectOptionRefs.current[highlightedProject]?.scrollIntoView({
+      block: "nearest",
+    });
+  }, [filteredProjects, highlightedProjectIndex, projectPickerOpen]);
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
       if (!projectPickerRef.current?.contains(event.target as Node)) {
         setProjectPickerOpen(false);
         setProjectQuery(selectedProject);
+        setHighlightedProjectIndex(-1);
       }
     }
 
@@ -551,27 +734,40 @@ export function App() {
   }, [selectedProject]);
 
   useEffect(() => {
-    const selectedExtensions = filters.extensionLabel ?? [];
-    const availableExtensions = new Set(filterOptions.extensionLabel ?? []);
+    setFilters((current) => {
+      let hasChanges = false;
+      const nextFilters = { ...current };
 
-    if (!shouldHideExtensionFilter && selectedExtensions.every((value) => availableExtensions.has(value))) {
-      return;
-    }
+      for (const group of FILTER_GROUPS) {
+        const selectedValues = current[group.key] ?? [];
+        const nextValues =
+          group.key === "extensionLabel" && shouldHideExtensionFilter
+            ? []
+            : selectedValues.filter((value) => (filterOptions[group.key] ?? []).includes(value));
 
-    setFilters((current) => ({
-      ...current,
-      extensionLabel: (current.extensionLabel ?? []).filter((value) => availableExtensions.has(value)),
-    }));
-  }, [filterOptions.extensionLabel, filters.extensionLabel, shouldHideExtensionFilter]);
+        if (
+          nextValues.length !== selectedValues.length ||
+          nextValues.some((value, index) => value !== selectedValues[index])
+        ) {
+          nextFilters[group.key] = nextValues;
+          hasChanges = true;
+        }
+      }
+
+      return hasChanges ? nextFilters : current;
+    });
+  }, [filterOptions, shouldHideExtensionFilter]);
 
   async function handleChooseRoot() {
     const settings = await window.fileFilterApi.chooseProjectsRoot();
     setProjectsRoot(settings.projectsRoot);
+    setFavoriteProjects(settings.favoriteProjects);
     setScanResult(null);
     setFilters(INITIAL_FILTERS);
     setExpandedGroups(INITIAL_EXPANDED_GROUPS);
     setProjectQuery("");
     setProjectPickerOpen(false);
+    setHighlightedProjectIndex(-1);
     await refreshProjects();
   }
 
@@ -590,6 +786,7 @@ export function App() {
       setExpandedGroups(INITIAL_EXPANDED_GROUPS);
       setSearchQuery("");
       setShowInvalidOnly(false);
+      setShowValidOnly(false);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Nie udało się przeskanować projektu.");
     } finally {
@@ -624,13 +821,39 @@ export function App() {
     setExpandedGroups(INITIAL_EXPANDED_GROUPS);
     setSearchQuery("");
     setShowInvalidOnly(false);
+    setShowValidOnly(false);
   }
 
   async function handleProjectSelect(project: string) {
+    setHighlightedProjectIndex(-1);
     setSelectedProject(project);
     setProjectQuery(project);
     setProjectPickerOpen(false);
     await runScan(project);
+  }
+
+  async function persistFavoriteProjects(nextFavoriteProjects: string[]) {
+    const settings = await window.fileFilterApi.updateFavoriteProjects(nextFavoriteProjects);
+    setFavoriteProjects(settings.favoriteProjects);
+    return settings.favoriteProjects;
+  }
+
+  async function handleFavoriteToggle() {
+    if (!selectedProject) {
+      return;
+    }
+
+    try {
+      const isFavorite = favoriteProjects.includes(selectedProject);
+      const nextFavoriteProjects = isFavorite
+        ? favoriteProjects.filter((project) => project !== selectedProject)
+        : [...favoriteProjects, selectedProject];
+
+      await persistFavoriteProjects(nextFavoriteProjects);
+      setErrorMessage("");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Nie udało się zapisać ulubionych projektów.");
+    }
   }
 
   async function handleRefreshCurrentProject() {
@@ -639,6 +862,36 @@ export function App() {
     }
 
     await runScan(selectedProject);
+  }
+
+  function toggleInvalidOnly(checked: boolean) {
+    setShowInvalidOnly(checked);
+    if (checked) {
+      setShowValidOnly(false);
+    }
+  }
+
+  function toggleValidOnly(checked: boolean) {
+    setShowValidOnly(checked);
+    if (checked) {
+      setShowInvalidOnly(false);
+    }
+  }
+
+  function toggleSort(sortKey: SortKey) {
+    setSortConfig((current) => {
+      if (current.key === sortKey) {
+        return {
+          key: sortKey,
+          direction: current.direction === "asc" ? "desc" : "asc",
+        };
+      }
+
+      return {
+        key: sortKey,
+        direction: "asc",
+      };
+    });
   }
 
   const activeFilterCount = Object.values(filters).reduce((sum, values) => sum + values.length, 0);
@@ -651,6 +904,22 @@ export function App() {
           <h1>Filtr plików projektowych</h1>
         </div>
 
+        <div className="hero-favorites" aria-label="Ulubione projekty">
+          {visibleFavoriteProjects.map((favoriteProject) => (
+            <button
+              key={favoriteProject.projectName}
+              type="button"
+              className={`favorite-project-card ${
+                favoriteProject.projectName === selectedProject ? "active" : ""
+              }`}
+              onClick={() => void handleProjectSelect(favoriteProject.projectName)}
+            >
+              <strong>{favoriteProject.number}</strong>
+              <span>{favoriteProject.label}</span>
+            </button>
+          ))}
+        </div>
+
         <div className="hero-actions">
           <button className="secondary-button" onClick={handleChooseRoot}>
             Zmień folder
@@ -661,27 +930,70 @@ export function App() {
       <section className="controls-layout">
         <div className="project-bar">
           <div className="field project-picker-field" ref={projectPickerRef}>
-            <span>Projekt</span>
+            <div className="project-field-header">
+              <span>Projekt</span>
+              <button
+                type="button"
+                className={`favorite-toggle ${selectedProjectIsFavorite ? "active" : ""}`}
+                onClick={() => void handleFavoriteToggle()}
+                aria-label={selectedProjectIsFavorite ? "Usuń projekt z ulubionych" : "Dodaj projekt do ulubionych"}
+                disabled={!selectedProject}
+              >
+                {selectedProjectIsFavorite ? "★" : "☆"}
+              </button>
+            </div>
             <div className={`project-picker ${projectPickerOpen ? "open" : ""}`}>
               <input
                 value={projectQuery}
                 onFocus={() => {
                   setProjectPickerOpen(true);
                   setProjectQuery("");
+                  setHighlightedProjectIndex(-1);
                 }}
                 onChange={(event) => {
                   setProjectQuery(event.target.value);
                   setProjectPickerOpen(true);
+                  setHighlightedProjectIndex(-1);
                 }}
                 onKeyDown={(event) => {
                   if (event.key === "Escape") {
                     setProjectPickerOpen(false);
                     setProjectQuery(selectedProject);
+                    setHighlightedProjectIndex(-1);
+                    return;
+                  }
+
+                  if (event.key === "ArrowDown") {
+                    if (!projectPickerOpen) {
+                      setProjectPickerOpen(true);
+                    }
+
+                    if (filteredProjects.length === 0) {
+                      return;
+                    }
+
+                    event.preventDefault();
+                    setHighlightedProjectIndex((current) =>
+                      current < 0 ? 0 : Math.min(current + 1, filteredProjects.length - 1),
+                    );
+                    return;
+                  }
+
+                  if (event.key === "ArrowUp") {
+                    if (!projectPickerOpen || filteredProjects.length === 0) {
+                      return;
+                    }
+
+                    event.preventDefault();
+                    setHighlightedProjectIndex((current) => (current <= 0 ? 0 : current - 1));
+                    return;
                   }
 
                   if (event.key === "Enter" && filteredProjects.length > 0) {
                     event.preventDefault();
-                    void handleProjectSelect(filteredProjects[0]);
+                    const projectToSelect =
+                      highlightedProjectIndex >= 0 ? filteredProjects[highlightedProjectIndex] : filteredProjects[0];
+                    void handleProjectSelect(projectToSelect);
                   }
                 }}
                 placeholder="Wybierz lub wyszukaj projekt"
@@ -699,6 +1011,7 @@ export function App() {
                     const next = !current;
                     if (next) {
                       setProjectQuery("");
+                      setHighlightedProjectIndex(-1);
                     }
                     return next;
                   });
@@ -714,13 +1027,21 @@ export function App() {
                   {filteredProjects.length === 0 ? (
                     <div className="project-picker-empty">Brak pasujących projektów.</div>
                   ) : (
-                    filteredProjects.map((project) => (
+                    filteredProjects.map((project, index) => (
                       <button
                         key={project}
                         type="button"
-                        className={`project-option ${project === selectedProject ? "active" : ""}`}
+                        className={`project-option ${
+                          index === highlightedProjectIndex || (highlightedProjectIndex === -1 && project === selectedProject)
+                            ? "active"
+                            : ""
+                        }`}
+                        ref={(element) => {
+                          projectOptionRefs.current[project] = element;
+                        }}
                         onMouseDown={(event) => event.preventDefault()}
                         onClick={() => void handleProjectSelect(project)}
+                        onMouseEnter={() => setHighlightedProjectIndex(index)}
                       >
                         {project}
                       </button>
@@ -738,7 +1059,7 @@ export function App() {
             <input
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Nazwa pliku, ścieżka, folder..."
+              placeholder="Nazwa pliku, kod, opis, ścieżka..."
             />
           </label>
 
@@ -783,7 +1104,7 @@ export function App() {
             </article>
             <article className="summary-card">
               <span>Aktywne filtry</span>
-              <strong>{activeFilterCount + (showInvalidOnly ? 1 : 0)}</strong>
+              <strong>{activeFilterCount + (showInvalidOnly || showValidOnly ? 1 : 0)}</strong>
             </article>
           </div>
 
@@ -842,14 +1163,25 @@ export function App() {
             })}
           </div>
 
-          <label className="toggle-card filter-toggle-card">
-            <input
-              type="checkbox"
-              checked={showInvalidOnly}
-              onChange={(event) => setShowInvalidOnly(event.target.checked)}
-            />
-            <span>Tylko błędnie nazwane</span>
-          </label>
+          <div className="filter-toggle-row">
+            <label className="toggle-card filter-toggle-card">
+              <input
+                type="checkbox"
+                checked={showInvalidOnly}
+                onChange={(event) => toggleInvalidOnly(event.target.checked)}
+              />
+              <span>Tylko błędne</span>
+            </label>
+
+            <label className="toggle-card filter-toggle-card">
+              <input
+                type="checkbox"
+                checked={showValidOnly}
+                onChange={(event) => toggleValidOnly(event.target.checked)}
+              />
+              <span>Tylko poprawne</span>
+            </label>
+          </div>
         </aside>
 
         <section className="results-panel">
@@ -860,7 +1192,7 @@ export function App() {
                 <h2>{scanResult.projectName}</h2>
               </div>
               <div className="status-strip">
-                <span>{filteredFiles.length} plików po filtrach</span>
+                <span>{getPolishFileCountLabel(sortedFiles.length)}</span>
                 <span>Skan: {new Date(scanResult.scannedAt).toLocaleString("pl-PL")}</span>
               </div>
             </div>
@@ -881,46 +1213,68 @@ export function App() {
               <table>
                 <thead>
                   <tr>
-                    <th>Plik</th>
-                    <th>Poprawność</th>
-                    <th>Typ plików</th>
-                    <th>Folder</th>
-                    <th>Faza</th>
-                    <th>Branża</th>
-                    <th>Typ</th>
-                    <th>Poziom</th>
-                    <th>Nr rysunku</th>
-                    <th>Rewizja</th>
-                    <th>Status</th>
+                    {SORTABLE_COLUMNS.map((column) => {
+                      const isActive = sortConfig.key === column.key;
+                      const directionLabel = isActive && sortConfig.direction === "asc" ? "rosnąco" : "malejąco";
+
+                      return (
+                        <th key={column.key} className={column.className}>
+                          <button
+                            type="button"
+                            className={`sort-button ${isActive ? "active" : ""}`}
+                            onClick={() => toggleSort(column.key)}
+                            aria-label={`Sortuj po kolumnie ${column.label} ${directionLabel}`}
+                          >
+                            <span>{column.label}</span>
+                            <span className="sort-indicator" aria-hidden="true">
+                              {isActive ? (sortConfig.direction === "asc" ? "▲" : "▼") : "↕"}
+                            </span>
+                          </button>
+                        </th>
+                      );
+                    })}
                     <th>Akcje</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredFiles.length === 0 ? (
+                  {sortedFiles.length === 0 ? (
                     <tr>
-                      <td colSpan={12}>
+                      <td colSpan={10}>
                         <div className="empty-inline">Brak plików pasujących do wybranych filtrów.</div>
                       </td>
                     </tr>
                   ) : (
-                    filteredFiles.map((file) => (
+                    sortedFiles.map((file) => (
                       <tr key={file.id} className={file.isValid ? "" : "invalid-row"}>
-                        <td>
+                        <td className="column-file">
                           <div className="file-cell">
-                            <strong>{file.fileName}</strong>
-                            <span title={file.absolutePath}>{file.absolutePath}</span>
+                            <button
+                              type="button"
+                              className="file-name-button"
+                              onClick={() => void window.fileFilterApi.openFolder(file.folderPath)}
+                              aria-label={`Otwórz folder dla pliku ${file.fileName}`}
+                              data-tooltip="Kliknij aby otworzyć folder"
+                            >
+                              {file.fileName}
+                            </button>
                           </div>
                         </td>
-                        <td>
-                          <span className={`status-pill ${file.isValid ? "valid" : "invalid"}`}>
-                            {file.isValid ? "OK" : "Błędna nazwa"}
+                        <td className="column-status">
+                          <span
+                            className={`status-pill ${file.isValid ? "valid" : "invalid"} ${
+                              !file.isValid && file.invalidReason && file.invalidReason !== "Błędna lokalizacja"
+                                ? "with-tooltip"
+                                : ""
+                            }`}
+                            data-tooltip={
+                              !file.isValid && file.invalidReason !== "Błędna lokalizacja"
+                                ? (file.invalidReason ?? "")
+                                : undefined
+                            }
+                          >
+                            {getValidationLabel(file)}
                           </span>
-                          {!file.isValid && file.invalidReason ? (
-                            <span className="muted-line">{file.invalidReason}</span>
-                          ) : null}
                         </td>
-                        <td>{file.sourceLabel}</td>
-                        <td>{file.disciplineFolder}</td>
                         <td>{file.parsedSegments?.phase ?? "-"}</td>
                         <td>{file.parsedSegments?.disciplineCode ?? "-"}</td>
                         <td>{file.parsedSegments?.documentType ?? "-"}</td>
@@ -932,9 +1286,6 @@ export function App() {
                           <div className="actions">
                             <button onClick={() => void window.fileFilterApi.openFile(file.absolutePath)}>
                               Otwórz plik
-                            </button>
-                            <button onClick={() => void window.fileFilterApi.openFolder(file.folderPath)}>
-                              Otwórz folder
                             </button>
                           </div>
                         </td>
