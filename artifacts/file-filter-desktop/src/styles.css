@@ -1364,12 +1364,49 @@ tbody tr:hover {
 }
 
 .naming-inline-control {
-  min-width: 220px;
+  min-width: 320px;
+  width: fit-content;
 }
 
 .naming-inline-control input,
 .naming-inline-control select {
   width: 100%;
+}
+
+.naming-session-input,
+.naming-inline-control .revision-input,
+.naming-inline-control .inline-code-select-trigger,
+.naming-inline-control .naming-session-select {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(193, 203, 214, 0.9);
+  background: rgba(246, 248, 251, 0.96);
+  color: #17212b;
+}
+
+.naming-inline-control .revision-input,
+.naming-inline-control .inline-code-select-trigger {
+  box-shadow: none;
+}
+
+.naming-session-input::placeholder,
+.naming-inline-control .revision-input::placeholder {
+  color: #7b8492;
+}
+
+.naming-session-select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #4b5969 50%),
+    linear-gradient(135deg, #4b5969 50%, transparent 50%);
+  background-position:
+    calc(100% - 22px) calc(50% - 1px),
+    calc(100% - 17px) calc(50% - 1px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 34px;
 }
 
 .naming-folder-side {
@@ -1443,9 +1480,9 @@ tbody tr:hover {
   top: calc(100% + 8px);
   left: 0;
   right: auto;
-  min-width: max(100%, 360px);
+  min-width: max(100%, 520px);
   width: max-content;
-  max-width: 560px;
+  max-width: min(86vw, 760px);
   z-index: 1200;
   max-height: 280px;
   overflow: auto;
@@ -1465,6 +1502,7 @@ tbody tr:hover {
   background: transparent;
   color: #22303d;
   text-align: left;
+  white-space: nowrap;
 }
 
 .naming-autocomplete-option:hover,
@@ -1534,10 +1572,10 @@ tbody tr:hover {
 
 .naming-bulk-fields {
   display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  grid-template-columns: repeat(2, minmax(220px, 320px));
   gap: 14px;
   flex: 1;
-  max-width: 1000px;
+  max-width: 654px;
 }
 
 .naming-bulk-actions {
@@ -1646,8 +1684,9 @@ tbody tr:hover {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  width: 100%;
-  min-width: 280px;
+  width: max-content;
+  min-width: max(100%, 420px);
+  max-width: min(86vw, 760px);
   z-index: 1200;
   padding: 8px;
   border-radius: 18px;
@@ -1665,6 +1704,7 @@ tbody tr:hover {
   background: transparent;
   color: #22303d;
   text-align: left;
+  white-space: nowrap;
 }
 
 .revision-picker-option:hover,
@@ -1675,10 +1715,10 @@ tbody tr:hover {
 
 .inline-code-select-trigger {
   width: 100%;
-  min-height: 40px;
-  padding: 0 10px;
-  border-radius: 12px;
-  border: 1px solid rgba(82, 98, 117, 0.18);
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(193, 203, 214, 0.9);
   background: rgba(246, 248, 251, 0.96);
   color: #17212b;
   display: flex;
@@ -1707,9 +1747,9 @@ tbody tr:hover {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  min-width: max(100%, 240px);
+  min-width: max(100%, 420px);
   width: max-content;
-  max-width: 360px;
+  max-width: min(86vw, 760px);
   z-index: 1200;
   max-height: 280px;
   overflow: auto;

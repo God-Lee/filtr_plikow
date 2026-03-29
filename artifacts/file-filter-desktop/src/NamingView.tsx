@@ -4,6 +4,9 @@ import pdfIcon from "./assets/extension-icons/pdf.svg";
 import wordIcon from "./assets/extension-icons/word.svg";
 import excelIcon from "./assets/extension-icons/excel.svg";
 import dwgIcon from "./assets/extension-icons/dwg.svg";
+import { InlineCodeSelect } from "./features/naming/components/InlineCodeSelect";
+import { RevisionInput } from "./features/naming/components/RevisionInput";
+import { RevisionPresetInput } from "./features/naming/components/RevisionPresetInput";
 
 type NamingViewProps = {
   selectedProjectName: string;
@@ -737,207 +740,6 @@ function formatDrawingNumber(prefix: string, index: number) {
 
 function extractFileNameFromInput(input: string) {
   return input.trim().split(/[\\/]/).pop()?.trim() ?? "";
-}
-
-function InlineCodeSelect({ value, options, placeholder = "Wybierz", menuLabel, onChange }: InlineCodeSelectProps) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const selectedOption = value ? findOptionByCode(options, value) : null;
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    function handlePointerDown(event: MouseEvent) {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-
-    window.addEventListener("mousedown", handlePointerDown);
-    return () => window.removeEventListener("mousedown", handlePointerDown);
-  }, [open]);
-
-  return (
-    <div className={`inline-code-select ${open ? "open" : ""}`} ref={containerRef}>
-      <button
-        type="button"
-        className={`inline-code-select-trigger ${selectedOption ? "" : "placeholder"}`}
-        aria-label={menuLabel}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span>{selectedOption?.code ?? placeholder}</span>
-        <span className="inline-code-select-arrow">▾</span>
-      </button>
-
-      {open ? (
-        <div className="inline-code-select-menu">
-          {options.map((option) => (
-            <button
-              key={option.code}
-              type="button"
-              className={`inline-code-select-option ${option.code === value ? "active" : ""}`}
-              onClick={() => {
-                onChange(option.code);
-                setOpen(false);
-              }}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function RevisionInput({
-  id,
-  value,
-  placeholder = "Np. R21 lub W03",
-  ariaLabel,
-  onCommit,
-  onInvalid,
-  inputRef,
-  clearSignal = 0,
-}: RevisionInputProps) {
-  const [draftValue, setDraftValue] = useState(value);
-
-  useEffect(() => {
-    setDraftValue(value);
-  }, [value]);
-
-  useEffect(() => {
-    if (clearSignal > 0) {
-      setDraftValue("");
-    }
-  }, [clearSignal]);
-
-  function commitDraft() {
-    const normalizedRevision = normalizeRevisionInput(draftValue);
-
-    if (!draftValue.trim()) {
-      onCommit("");
-      return;
-    }
-
-    if (!normalizedRevision) {
-      onInvalid(getRevisionValidationMessage(draftValue));
-      return;
-    }
-
-    setDraftValue(normalizedRevision);
-    onCommit(normalizedRevision);
-  }
-
-  function handleChange(nextValue: string) {
-    const normalizedValue = nextValue.toUpperCase();
-
-    if (!isRevisionPartialInputAllowed(normalizedValue) && !normalizeRevisionInput(normalizedValue)) {
-      onInvalid(getRevisionValidationMessage(normalizedValue));
-      return;
-    }
-
-    setDraftValue(normalizedValue);
-  }
-
-  function handleBlur() {
-    setDraftValue(value);
-  }
-
-  function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      commitDraft();
-      return;
-    }
-
-    if (event.key === "Escape") {
-      event.preventDefault();
-      setDraftValue(value);
-    }
-  }
-
-  return (
-    <input
-      id={id}
-      ref={inputRef}
-      value={draftValue}
-      className="revision-input"
-      aria-label={ariaLabel}
-      placeholder={placeholder}
-      onChange={(event) => handleChange(event.target.value)}
-      onBlur={handleBlur}
-      onKeyDown={handleKeyDown}
-    />
-  );
-}
-
-function RevisionPresetInput(props: RevisionPresetInputProps) {
-  const [open, setOpen] = useState(false);
-  const [clearSignal, setClearSignal] = useState(0);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    function handlePointerDown(event: MouseEvent) {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-
-    window.addEventListener("mousedown", handlePointerDown);
-    return () => window.removeEventListener("mousedown", handlePointerDown);
-  }, [open]);
-
-  return (
-    <div className={`revision-picker ${open ? "open" : ""}`} ref={containerRef}>
-      <RevisionInput {...props} clearSignal={clearSignal} />
-      <button
-        type="button"
-        className="revision-picker-toggle"
-        aria-label={props.menuLabel}
-        onClick={() => setOpen((current) => !current)}
-      >
-        ▾
-      </button>
-
-      {open ? (
-        <div className="revision-picker-menu">
-          {REVISION_PRESET_OPTIONS.map((option) => (
-            <button
-              key={option.code}
-              type="button"
-              className="revision-picker-option"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                props.onCommit(option.code);
-                setOpen(false);
-              }}
-            >
-              {option.label}
-            </button>
-          ))}
-          <button
-            type="button"
-            className="revision-picker-option"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => {
-              setClearSignal((current) => current + 1);
-              setOpen(false);
-              window.setTimeout(() => props.inputRef?.current?.focus(), 0);
-            }}
-          >
-            {REVISION_CUSTOM_OPTION_LABEL}
-          </button>
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 export function NamingView({ selectedProjectName }: NamingViewProps) {
@@ -2742,6 +2544,7 @@ export function NamingView({ selectedProjectName }: NamingViewProps) {
                     <div className="naming-inline-control">
                       <input
                         id="naming-project-number"
+                        className="naming-session-input"
                         value={projectNumber}
                         onChange={(event) => setProjectNumber(event.target.value.replace(/\D/g, "").slice(0, 5))}
                         placeholder="Np. 25145"
@@ -2755,6 +2558,7 @@ export function NamingView({ selectedProjectName }: NamingViewProps) {
                       <div className={`naming-autocomplete ${phaseMenuOpen ? "open" : ""}`}>
                         <input
                           id="naming-phase-input"
+                          className="naming-session-input"
                           value={phaseInput}
                           onFocus={() => {
                             setPhaseMenuOpen(true);
@@ -2835,6 +2639,7 @@ export function NamingView({ selectedProjectName }: NamingViewProps) {
                       <div className={`naming-autocomplete ${disciplineMenuOpen ? "open" : ""}`}>
                         <input
                           id="naming-discipline-input"
+                          className="naming-session-input"
                           value={disciplineInput}
                           onFocus={() => {
                             setDisciplineMenuOpen(true);
@@ -2937,6 +2742,7 @@ export function NamingView({ selectedProjectName }: NamingViewProps) {
                     <div className="naming-inline-control">
                       <select
                         id="naming-status-input"
+                        className="naming-session-input naming-session-select"
                         value={defaultStatus}
                         onChange={(event) => setDefaultStatus(event.target.value)}
                       >
