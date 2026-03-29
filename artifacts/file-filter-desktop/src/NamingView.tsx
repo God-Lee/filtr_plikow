@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import namingStandards from "../shared/naming-standards.json";
 import pdfIcon from "./assets/extension-icons/pdf.svg";
 import wordIcon from "./assets/extension-icons/word.svg";
@@ -846,7 +846,7 @@ function RevisionInput({
     setDraftValue(value);
   }
 
-  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") {
       event.preventDefault();
       commitDraft();
