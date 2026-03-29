@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { NamingView } from "./NamingView";
 import namingStandards from "../shared/naming-standards.json";
 
 declare global {
@@ -7,8 +8,29 @@ declare global {
       getSettings: () => Promise<AppSettings>;
       chooseProjectsRoot: () => Promise<AppSettings>;
       updateFavoriteProjects: (favoriteProjects: string[]) => Promise<AppSettings>;
+      updateNamingViewDraft: (namingViewDraft: NamingViewDraft) => Promise<AppSettings>;
       listProjects: () => Promise<string[]>;
       scanProject: (projectName: string) => Promise<ScanResult>;
+      exportInvalidFilesReport: (
+        files: Array<{ fileName: string; disciplineFolder: string }>,
+      ) => Promise<{ saved: boolean; reportPath: string | null }>;
+      chooseDirectory: (title: string) => Promise<string | null>;
+      listNamingFiles: (folderPath: string) => Promise<{
+        files: Array<{
+          id: string;
+          fileName: string;
+          absolutePath: string;
+          folderPath: string;
+          relativePath: string;
+          extension: string;
+          baseName: string;
+        }>;
+        ignoredCount: number;
+        totalCount: number;
+      }>;
+      copyNamingFiles: (
+        items: Array<{ sourcePath: string; targetPath: string; overwriteExisting?: boolean }>,
+      ) => Promise<{ copiedCount: number }>;
       openFile: (targetPath: string) => Promise<void>;
       openFolder: (targetPath: string) => Promise<void>;
     };
@@ -18,6 +40,19 @@ declare global {
 type AppSettings = {
   projectsRoot: string;
   favoriteProjects: string[];
+  namingViewDraft: NamingViewDraft;
+};
+
+type NamingViewDraft = {
+  projectNumber: string;
+  phaseInput: string;
+  disciplineInput: string;
+  defaultRevision: string;
+  defaultRevisionInput: string;
+  defaultStatus: string;
+  workingFolder: string;
+  targetFolder: string;
+  ignoredSourcePathsByFolder: Record<string, string[]>;
 };
 
 type FileRecord = {
@@ -106,8 +141,27 @@ const PHASE_LABELS: Record<string, string> = namingStandards.phases;
 const DISCIPLINE_LABELS: Record<string, string> = namingStandards.disciplines;
 const DOCUMENT_TYPE_LABELS: Record<string, string> = namingStandards.documentTypes;
 const LEVEL_LABELS: Record<string, string> = namingStandards.levels;
-const REVISION_LABELS: Record<string, string> = namingStandards.revisions;
+const REVISION_LABELS: Record<string, string> = buildRevisionLabels();
 const STATUS_LABELS: Record<string, string> = namingStandards.statuses;
+
+function buildRevisionLabels() {
+  const labels: Record<string, string> = {
+    R00: 'R00 - rewizja "zerowa" (domyślna)',
+    W01: "W01 - pierwsza wersja koncepcji (domyślna)",
+  };
+
+  for (let index = 0; index <= 99; index += 1) {
+    const code = `R${String(index).padStart(2, "0")}`;
+    labels[code] ??= code;
+  }
+
+  for (let index = 1; index <= 99; index += 1) {
+    const code = `W${String(index).padStart(2, "0")}`;
+    labels[code] ??= code;
+  }
+
+  return labels;
+}
 
 function getMappedFilterLabel(value: string | null | undefined, labels: Record<string, string>) {
   if (!value) {
@@ -118,7 +172,7 @@ function getMappedFilterLabel(value: string | null | undefined, labels: Record<s
 }
 
 function isRevisionCodeValid(revision: string | undefined) {
-  return /^(?:[RW]\d{2}|W0X)$/.test(revision ?? "");
+  return /^R\d{2}$/.test(revision ?? "") || (/^W\d{2}$/.test(revision ?? "") && revision !== "W00");
 }
 
 function getExtensionFilterLabel(file: FileRecord) {
@@ -313,6 +367,42 @@ function getFavoriteProjectCard(projectName: string): FavoriteProjectCard {
     number,
     label,
   };
+}
+
+function getDisciplineFolderLabel(folderName: string) {
+  return folderName.replace(/^\d+\.\s*/, "");
+}
+
+function getPolishGenericFileCountLabel(count: number) {
+  if (count === 1) {
+    return "1 plik";
+  }
+
+  const units = count % 10;
+  const tens = count % 100;
+  if (units >= 2 && units <= 4 && (tens < 12 || tens > 14)) {
+    return `${count} pliki`;
+  }
+
+  return `${count} plików`;
+}
+
+function buildDisciplineFolderTooltip(files: FileRecord[], isValid: boolean) {
+  const counts = new Map<string, number>();
+
+  files.forEach((file) => {
+    if (file.isValid !== isValid) {
+      return;
+    }
+
+    const label = getDisciplineFolderLabel(file.disciplineFolder);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  });
+
+  return Array.from(counts.entries())
+    .sort((left, right) => left[0].localeCompare(right[0], "pl"))
+    .map(([folder, count]) => `${folder}: ${getPolishGenericFileCountLabel(count)}`)
+    .join("\n");
 }
 
 function matchesBaseCriteria(file: FileRecord, query: string, showInvalidOnly: boolean, showValidOnly: boolean) {
@@ -515,10 +605,8 @@ function extractOptions(files: FileRecord[], group: FilterGroup) {
 
   if (group.key === "revision") {
     const revisionOrder = [
-      "R00 - Rewizja zerowa",
-      "R01 - pierwsza rewizja",
-      "W01 - pierwsza wersja koncepcji (domyślna)",
-      "W0X - kolejne wersje koncepcji",
+      ...Array.from({ length: 100 }, (_unused, index) => REVISION_LABELS[`R${String(index).padStart(2, "0")}`]),
+      ...Array.from({ length: 99 }, (_unused, index) => REVISION_LABELS[`W${String(index + 1).padStart(2, "0")}`]),
     ];
 
     return sortWithInvalidLast(options, revisionOrder);
@@ -539,6 +627,7 @@ function extractOptions(files: FileRecord[], group: FilterGroup) {
 }
 
 export function App() {
+  const [activeView, setActiveView] = useState<"filter" | "naming">("filter");
   const [projectsRoot, setProjectsRoot] = useState("");
   const [projects, setProjects] = useState<string[]>([]);
   const [favoriteProjects, setFavoriteProjects] = useState<string[]>([]);
@@ -550,6 +639,9 @@ export function App() {
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [reportMessage, setReportMessage] = useState("");
+  const [reportMessageType, setReportMessageType] = useState<"success" | "error">("success");
+  const [exportingInvalidReport, setExportingInvalidReport] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showInvalidOnly, setShowInvalidOnly] = useState(false);
   const [showValidOnly, setShowValidOnly] = useState(false);
@@ -562,6 +654,7 @@ export function App() {
   async function refreshProjects(preferredProject?: string) {
     setLoadingProjects(true);
     setErrorMessage("");
+    setReportMessage("");
 
     try {
       const [settings, projectNames] = await Promise.all([
@@ -864,6 +957,39 @@ export function App() {
     await runScan(selectedProject);
   }
 
+  async function handleExportInvalidFilesReport() {
+    const invalidFiles = (scanResult?.files ?? [])
+      .filter((file) => !file.isValid)
+      .map((file) => ({
+        fileName: file.fileName,
+        disciplineFolder: file.disciplineFolder,
+      }));
+
+    if (invalidFiles.length === 0) {
+      setReportMessageType("error");
+      setReportMessage("Brak błędnych plików do wyeksportowania.");
+      return;
+    }
+
+    setExportingInvalidReport(true);
+    setErrorMessage("");
+
+    try {
+      const result = await window.fileFilterApi.exportInvalidFilesReport(invalidFiles);
+      if (!result.saved) {
+        return;
+      }
+
+      setReportMessageType("success");
+      setReportMessage(`Raport zapisano: ${result.reportPath}`);
+    } catch (error) {
+      setReportMessageType("error");
+      setReportMessage(error instanceof Error ? error.message : "Nie udało się wyeksportować raportu.");
+    } finally {
+      setExportingInvalidReport(false);
+    }
+  }
+
   function toggleInvalidOnly(checked: boolean) {
     setShowInvalidOnly(checked);
     if (checked) {
@@ -895,6 +1021,14 @@ export function App() {
   }
 
   const activeFilterCount = Object.values(filters).reduce((sum, values) => sum + values.length, 0);
+  const validCountTooltip = useMemo(
+    () => buildDisciplineFolderTooltip(scanResult?.files ?? [], true),
+    [scanResult?.files],
+  );
+  const invalidCountTooltip = useMemo(
+    () => buildDisciplineFolderTooltip(scanResult?.files ?? [], false),
+    [scanResult?.files],
+  );
 
   return (
     <div className="app-shell">
@@ -904,43 +1038,69 @@ export function App() {
           <h1>Filtr plików projektowych</h1>
         </div>
 
-        <div className="hero-favorites" aria-label="Ulubione projekty">
-          {visibleFavoriteProjects.map((favoriteProject) => (
-            <button
-              key={favoriteProject.projectName}
-              type="button"
-              className={`favorite-project-card ${
-                favoriteProject.projectName === selectedProject ? "active" : ""
-              }`}
-              onClick={() => void handleProjectSelect(favoriteProject.projectName)}
-            >
-              <strong>{favoriteProject.number}</strong>
-              <span>{favoriteProject.label}</span>
-            </button>
-          ))}
-        </div>
+        {activeView === "filter" ? (
+          <div className="hero-favorites" aria-label="Ulubione projekty">
+            {visibleFavoriteProjects.map((favoriteProject) => (
+              <button
+                key={favoriteProject.projectName}
+                type="button"
+                className={`favorite-project-card ${
+                  favoriteProject.projectName === selectedProject ? "active" : ""
+                }`}
+                onClick={() => void handleProjectSelect(favoriteProject.projectName)}
+              >
+                <strong>{favoriteProject.number}</strong>
+                <span>{favoriteProject.label}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="hero-spacer" aria-hidden="true" />
+        )}
 
         <div className="hero-actions">
-          <button className="secondary-button" onClick={handleChooseRoot}>
-            Zmień folder
+          <button
+            className={`secondary-button ${activeView === "filter" ? "active" : ""}`}
+            onClick={() => setActiveView("filter")}
+          >
+            Filtr
+          </button>
+          <button
+            className={`secondary-button ${activeView === "naming" ? "active" : ""}`}
+            onClick={() => setActiveView("naming")}
+          >
+            Nazywanie
           </button>
         </div>
       </header>
 
+      <div className={`app-content-scroll ${activeView === "filter" ? "filter-view-scroll" : ""}`}>
+        {activeView === "filter" ? (
+          <>
       <section className="controls-layout">
         <div className="project-bar">
           <div className="field project-picker-field" ref={projectPickerRef}>
             <div className="project-field-header">
               <span>Projekt</span>
-              <button
-                type="button"
-                className={`favorite-toggle ${selectedProjectIsFavorite ? "active" : ""}`}
-                onClick={() => void handleFavoriteToggle()}
-                aria-label={selectedProjectIsFavorite ? "Usuń projekt z ulubionych" : "Dodaj projekt do ulubionych"}
-                disabled={!selectedProject}
-              >
-                {selectedProjectIsFavorite ? "★" : "☆"}
-              </button>
+              <div className="project-field-actions">
+                <button
+                  type="button"
+                  className="project-folder-toggle"
+                  onClick={() => void handleChooseRoot()}
+                  aria-label="Zmień folder projektów"
+                >
+                  📁
+                </button>
+                <button
+                  type="button"
+                  className={`favorite-toggle ${selectedProjectIsFavorite ? "active" : ""}`}
+                  onClick={() => void handleFavoriteToggle()}
+                  aria-label={selectedProjectIsFavorite ? "Usuń projekt z ulubionych" : "Dodaj projekt do ulubionych"}
+                  disabled={!selectedProject}
+                >
+                  {selectedProjectIsFavorite ? "★" : "☆"}
+                </button>
+              </div>
             </div>
             <div className={`project-picker ${projectPickerOpen ? "open" : ""}`}>
               <input
@@ -1074,6 +1234,7 @@ export function App() {
       </section>
 
       {errorMessage && <div className="banner error">{errorMessage}</div>}
+      {reportMessage && <div className={`banner ${reportMessageType}`}>{reportMessage}</div>}
       {!projectsRoot && (
         <div className="banner warning">
           Przy pierwszym uruchomieniu wskaż folder <strong>ESP - Realizacje</strong>. Program zapamięta go na przyszłość.
@@ -1089,98 +1250,119 @@ export function App() {
             </button>
           </div>
 
-          <div className="summary-grid">
-            <article className="summary-card">
-              <span>Wszystkie</span>
-              <strong>{scanResult?.totalFiles ?? 0}</strong>
-            </article>
-            <article className="summary-card">
-              <span>Poprawne</span>
-              <strong>{scanResult?.validCount ?? 0}</strong>
-            </article>
-            <article className="summary-card invalid">
-              <span>Błędne</span>
-              <strong>{scanResult?.invalidCount ?? 0}</strong>
-            </article>
-            <article className="summary-card">
-              <span>Aktywne filtry</span>
-              <strong>{activeFilterCount + (showInvalidOnly || showValidOnly ? 1 : 0)}</strong>
-            </article>
-          </div>
+          <div className="filters-panel-scroll">
+            <div className="summary-grid">
+              <article className="summary-card">
+                <span>Wszystkie</span>
+                <strong>{scanResult?.totalFiles ?? 0}</strong>
+              </article>
+              <article className="summary-card">
+                <span>Poprawne</span>
+                <strong
+                  className={validCountTooltip ? "summary-card-value with-tooltip" : "summary-card-value"}
+                  data-tooltip={validCountTooltip || undefined}
+                >
+                  {scanResult?.validCount ?? 0}
+                </strong>
+              </article>
+              <article className="summary-card invalid">
+                <span>Błędne</span>
+                <strong
+                  className={invalidCountTooltip ? "summary-card-value with-tooltip" : "summary-card-value"}
+                  data-tooltip={invalidCountTooltip || undefined}
+                >
+                  {scanResult?.invalidCount ?? 0}
+                </strong>
+              </article>
+              <article className="summary-card">
+                <span>Aktywne filtry</span>
+                <strong>{activeFilterCount + (showInvalidOnly || showValidOnly ? 1 : 0)}</strong>
+              </article>
+            </div>
 
-          <div className="filter-groups">
-            {visibleFilterGroups.map((group) => {
-              const options = filterOptions[group.key] ?? [];
-              const selectedValues = filters[group.key] ?? [];
+            <div className="filter-groups">
+              {visibleFilterGroups.map((group) => {
+                const options = filterOptions[group.key] ?? [];
+                const selectedValues = filters[group.key] ?? [];
 
-              return (
-                <section className={`filter-group ${expandedGroups[group.key] ? "" : "collapsed"}`} key={group.key}>
-                  <div className="filter-group-header">
-                    <h3>{group.label}</h3>
-                    <div className="filter-group-meta">
-                      <span>{selectedValues.length}</span>
-                      <button
-                        type="button"
-                        className="filter-group-toggle"
-                        aria-label={expandedGroups[group.key] ? `Zwiń filtr ${group.label}` : `Rozwiń filtr ${group.label}`}
-                        onClick={() =>
-                          setExpandedGroups((current) => ({
-                            ...current,
-                            [group.key]: !current[group.key],
-                          }))
-                        }
+                return (
+                  <section className={`filter-group ${expandedGroups[group.key] ? "" : "collapsed"}`} key={group.key}>
+                    <div className="filter-group-header">
+                      <h3>{group.label}</h3>
+                      <div className="filter-group-meta">
+                        <span>{selectedValues.length}</span>
+                        <button
+                          type="button"
+                          className="filter-group-toggle"
+                          aria-label={expandedGroups[group.key] ? `Zwiń filtr ${group.label}` : `Rozwiń filtr ${group.label}`}
+                          onClick={() =>
+                            setExpandedGroups((current) => ({
+                              ...current,
+                              [group.key]: !current[group.key],
+                            }))
+                          }
+                        >
+                          <span className={`filter-group-toggle-icon ${expandedGroups[group.key] ? "expanded" : ""}`}>
+                            &gt;
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {expandedGroups[group.key] ? (
+                      <div
+                        className={`chip-grid ${
+                          group.key !== "sourceKey" && group.key !== "extensionLabel" ? "stacked-chip-grid" : ""
+                        }`}
                       >
-                        <span className={`filter-group-toggle-icon ${expandedGroups[group.key] ? "expanded" : ""}`}>
-                          &gt;
-                        </span>
-                      </button>
-                    </div>
-                  </div>
+                        {options.length === 0 && <p className="empty-copy">Brak danych po skanowaniu.</p>}
+                        {options.map((option) => {
+                          const active = selectedValues.includes(option);
+                          return (
+                            <button
+                              key={option}
+                              className={`chip ${active ? "active" : ""}`}
+                              onClick={() => toggleFilter(group.key, option)}
+                            >
+                              {option}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </section>
+                );
+              })}
+            </div>
 
-                  {expandedGroups[group.key] ? (
-                    <div
-                      className={`chip-grid ${
-                        group.key !== "sourceKey" && group.key !== "extensionLabel" ? "stacked-chip-grid" : ""
-                      }`}
-                    >
-                      {options.length === 0 && <p className="empty-copy">Brak danych po skanowaniu.</p>}
-                      {options.map((option) => {
-                        const active = selectedValues.includes(option);
-                        return (
-                          <button
-                            key={option}
-                            className={`chip ${active ? "active" : ""}`}
-                            onClick={() => toggleFilter(group.key, option)}
-                          >
-                            {option}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-                </section>
-              );
-            })}
-          </div>
+            <div className="filter-toggle-row">
+              <label className="toggle-card filter-toggle-card">
+                <input
+                  type="checkbox"
+                  checked={showInvalidOnly}
+                  onChange={(event) => toggleInvalidOnly(event.target.checked)}
+                />
+                <span>Tylko błędne</span>
+              </label>
 
-          <div className="filter-toggle-row">
-            <label className="toggle-card filter-toggle-card">
-              <input
-                type="checkbox"
-                checked={showInvalidOnly}
-                onChange={(event) => toggleInvalidOnly(event.target.checked)}
-              />
-              <span>Tylko błędne</span>
-            </label>
+              <label className="toggle-card filter-toggle-card">
+                <input
+                  type="checkbox"
+                  checked={showValidOnly}
+                  onChange={(event) => toggleValidOnly(event.target.checked)}
+                />
+                <span>Tylko poprawne</span>
+              </label>
+            </div>
 
-            <label className="toggle-card filter-toggle-card">
-              <input
-                type="checkbox"
-                checked={showValidOnly}
-                onChange={(event) => toggleValidOnly(event.target.checked)}
-              />
-              <span>Tylko poprawne</span>
-            </label>
+            <button
+              type="button"
+              className="primary-button filter-export-button"
+              onClick={() => void handleExportInvalidFilesReport()}
+              disabled={!scanResult || exportingInvalidReport || (scanResult.invalidCount ?? 0) === 0}
+            >
+              {exportingInvalidReport ? "Eksportowanie..." : "Eksportuj raport błędnych plików"}
+            </button>
           </div>
         </aside>
 
@@ -1297,7 +1479,12 @@ export function App() {
             </div>
           )}
         </section>
-      </main>
+          </main>
+          </>
+        ) : (
+          <NamingView selectedProjectName={selectedProject} />
+        )}
+      </div>
     </div>
   );
 }

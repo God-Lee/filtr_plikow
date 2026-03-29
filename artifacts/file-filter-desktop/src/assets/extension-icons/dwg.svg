@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="dwgTitle">
+  <title id="dwgTitle">DWG</title>
+  <defs>
+    <linearGradient id="dwgBlue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7d95b6" />
+      <stop offset="18%" stop-color="#49688e" />
+      <stop offset="68%" stop-color="#24446f" />
+      <stop offset="100%" stop-color="#18365f" />
+    </linearGradient>
+    <linearGradient id="dwgFold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#d4dfef" />
+      <stop offset="100%" stop-color="#6c8fbb" />
+    </linearGradient>
+    <linearGradient id="dwgYellow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fff38a" />
+      <stop offset="22%" stop-color="#ffe13c" />
+      <stop offset="100%" stop-color="#ffd100" />
+    </linearGradient>
+    <linearGradient id="dwgGloss" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+  <g transform="translate(22 0) scale(0.83 1)">
+    <path
+      d="M30 14h146c14 0 22 3 31 12l35 35c9 9 12 17 12 31v134c0 18-14 30-31 30H30c-17 0-30-13-30-30V44c0-17 13-30 30-30Z"
+      fill="url(#dwgBlue)"
+    />
+    <path
+      d="M177 14h5c14 0 22 3 31 12l35 35c9 9 12 17 12 31v5h-55c-16 0-28-12-28-28Z"
+      fill="url(#dwgFold)"
+    />
+    <path
+      d="M14 122h100l128 73v47c0 8-6 14-14 14H14c-8 0-14-6-14-14Z"
+      fill="url(#dwgYellow)"
+    />
+    <path
+      d="M29 28h67v12H44v53H32V31c0-2 1-3 3-3Zm64 61h67v12H105v55H93v-67Zm-61 4h49v12H32Zm73 0h22v12h-22Zm-24-43h12v31H81Zm0 74h12v31H81Z"
+      fill="#f6f8fb"
+    />
+    <rect x="79" y="55" width="42" height="42" fill="none" stroke="#f6f8fb" stroke-width="8" />
+    <rect x="96" y="72" width="8" height="8" fill="#f6f8fb" />
+    <path d="M18 20h122c-50 8-90 45-110 99L18 20Z" fill="url(#dwgGloss)" opacity=".45" />
+    <path d="M7 248v-118l21 118Zm235 0-87-1 87-47Z" fill="#fff2a6" opacity=".7" />
+    <text
+      x="124"
+      y="224"
+      text-anchor="middle"
+      font-family="Arial, Helvetica, sans-serif"
+      font-size="52"
+      font-weight="700"
+      fill="#050505"
+    >
+      DWG
+    </text>
+  </g>
+</svg>
