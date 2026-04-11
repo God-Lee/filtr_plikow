@@ -1,15 +1,32 @@
-import { type KeyboardEvent as ReactKeyboardEvent, type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type RefObject,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { NamingHeroMenuState } from "./app/types";
 import namingStandards from "../shared/naming-standards.json";
 import pdfIcon from "./assets/extension-icons/pdf.svg";
 import wordIcon from "./assets/extension-icons/word.svg";
 import excelIcon from "./assets/extension-icons/excel.svg";
 import dwgIcon from "./assets/extension-icons/dwg.svg";
+import { useTransientBanner } from "./app/useTransientBanner";
 import { InlineCodeSelect } from "./features/naming/components/InlineCodeSelect";
 import { RevisionInput } from "./features/naming/components/RevisionInput";
 import { RevisionPresetInput } from "./features/naming/components/RevisionPresetInput";
 
+function shouldToggleSelectionFromTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement && !target.closest("button, input, select, textarea, a, label");
+}
+
 type NamingViewProps = {
   selectedProjectName: string;
+  refreshWorkingFolderRequestToken: number;
+  undoLastOperationRequestToken: number;
+  onHeroMenuStateChange: (state: NamingHeroMenuState) => void;
 };
 
 type NamingOption = {
@@ -218,6 +235,7 @@ const REVISION_CUSTOM_OPTION_LABEL = "wpisz numer rewizji";
 const REVISION_INPUT_MESSAGE =
   "Wpisz rewizję w formacie R00-R99 albo W01-W99, np. R21 lub W03. Sam numer, np. 21, zapisze się jako R21.";
 const REVISION_CONCEPT_MESSAGE = "Wersję koncepcji wpisz od W01 do W99. Dla rewizji zerowej użyj R00.";
+const BULK_STATUS_INPUT_MESSAGE = "Wpisz poprawny status: S0, S1, S2 lub A1.";
 const REVISION_OPTIONS = buildRevisionOptions();
 const STATUS_OPTIONS = buildOptions(namingStandards.statuses);
 
@@ -742,10 +760,16 @@ function extractFileNameFromInput(input: string) {
   return input.trim().split(/[\\/]/).pop()?.trim() ?? "";
 }
 
-export function NamingView({ selectedProjectName }: NamingViewProps) {
+export function NamingView({
+  selectedProjectName,
+  refreshWorkingFolderRequestToken,
+  undoLastOperationRequestToken,
+  onHeroMenuStateChange,
+}: NamingViewProps) {
   const initialDraftRef = useRef<NamingViewDraft | null>(null);
   const defaultRevisionInputRef = useRef<HTMLInputElement | null>(null);
-  const bulkRevisionInputRef = useRef<HTMLInputElement | null>(null);
+  const handledRefreshRequestTokenRef = useRef(0);
+  const handledUndoRequestTokenRef = useRef(0);
   const hasRestoredFoldersRef = useRef(false);
   const hasLoadedDraftRef = useRef(false);
   const workingFolderRequestIdRef = useRef(0);
@@ -792,11 +816,14 @@ export function NamingView({ selectedProjectName }: NamingViewProps) {
   const [copyingRowIds, setCopyingRowIds] = useState<string[]>([]);
   const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
   const [dragOverRowId, setDragOverRowId] = useState<string | null>(null);
+  const rowPointerDownRef = useRef<{ rowId: string; at: number } | null>(null);
   const [isSetupCollapsed, setIsSetupCollapsed] = useState(false);
   const [isIgnoredSectionCollapsed, setIsIgnoredSectionCollapsed] = useState(true);
   const [hasAutoCollapsedSetup, setHasAutoCollapsedSetup] = useState(false);
   const [hasFileListChanges, setHasFileListChanges] = useState(false);
   const [extensionFilter, setExtensionFilter] = useState<ExtensionFilterGroup | "">("");
+
+  useTransientBanner(message, () => setMessage(""));
   const [phaseMenuOpen, setPhaseMenuOpen] = useState(false);
   const [disciplineMenuOpen, setDisciplineMenuOpen] = useState(false);
   const [highlightedPhaseIndex, setHighlightedPhaseIndex] = useState(-1);
@@ -925,10 +952,44 @@ export function NamingView({ selectedProjectName }: NamingViewProps) {
 
   useEffect(() => {
     if (rows.length === 0) {
-      setBulkRevision(defaultRevision);
-      setBulkStatus(defaultStatus);
+      setBulkRevision("");
+      setBulkStatus("");
     }
-  }, [defaultRevision, defaultStatus, rows.length]);
+  }, [rows.length]);
+
+  useEffect(() => {
+    onHeroMenuStateChange({
+      canRefreshWorkingFolder: Boolean(workingFolder) && !loadingWorkingFolder,
+      refreshWorkingFolderLabel: loadingWorkingFolder ? "Odświeżanie folderu roboczego..." : "Odśwież folder roboczy",
+      canUndoLastOperation: Boolean(lastBulkOperation),
+    });
+  }, [lastBulkOperation, loadingWorkingFolder, onHeroMenuStateChange, workingFolder]);
+
+  useEffect(() => {
+    return () =>
+      onHeroMenuStateChange({
+        canRefreshWorkingFolder: false,
+        refreshWorkingFolderLabel: "Odśwież folder roboczy",
+        canUndoLastOperation: false,
+      });
+  }, [onHeroMenuStateChange]);
+
+  useEffect(() => {
+    if (
+      refreshWorkingFolderRequestToken > 0 &&
+      refreshWorkingFolderRequestToken !== handledRefreshRequestTokenRef.current
+    ) {
+      handledRefreshRequestTokenRef.current = refreshWorkingFolderRequestToken;
+      void handleRefreshWorkingFolder();
+    }
+  }, [refreshWorkingFolderRequestToken]);
+
+  useEffect(() => {
+    if (undoLastOperationRequestToken > 0 && undoLastOperationRequestToken !== handledUndoRequestTokenRef.current) {
+      handledUndoRequestTokenRef.current = undoLastOperationRequestToken;
+      undoLastBulkOperation();
+    }
+  }, [undoLastOperationRequestToken]);
 
   useEffect(() => {
     if (!workingFolder) {
@@ -1042,8 +1103,8 @@ export function NamingView({ selectedProjectName }: NamingViewProps) {
       setIsIgnoredSectionCollapsed(savedIgnoredPaths.length === 0);
       setHasFileListChanges(false);
       setLastBulkOperation(null);
-      setBulkRevision(defaultRevision);
-      setBulkStatus(defaultStatus);
+      setBulkRevision("");
+      setBulkStatus("");
 
       const loadedRows = result.files.map((file) => buildInitialRow(file, defaultRevision, defaultStatus));
       const nextIgnoredRows = dedupeRowsBySourcePath(
@@ -1251,41 +1312,62 @@ export function NamingView({ selectedProjectName }: NamingViewProps) {
     );
   }
 
-  function handleBulkRevisionChange(nextRevision: string) {
+  function handleBulkRevisionInputChange(input: string) {
     if (messageType === "error" && isRevisionValidationMessage(message)) {
       setMessage("");
     }
 
-    const nextStatus = bulkStatus;
-    const previousRevision = bulkRevision;
-    const previousStatus = bulkStatus;
-
-    setBulkRevision(nextRevision);
-
-    if (rows.length === 0) {
+    const nextValue = input.toUpperCase().replace(/\s+/g, "").slice(0, 3);
+    if (nextValue && !isRevisionPartialInputAllowed(nextValue) && !normalizeRevisionInput(nextValue)) {
+      setMessage(getRevisionValidationMessage(nextValue));
+      setMessageType("error");
       return;
     }
 
-    if (hasFileListChanges) {
-      setPendingBulkApply({
-        changedField: "revision",
-        nextRevision,
-        nextStatus,
-        previousRevision,
-        previousStatus,
-      });
-      return;
-    }
-
-    applyRevisionAndStatusToAll(nextRevision, nextStatus);
+    setBulkRevision(nextValue);
   }
 
-  function handleBulkStatusChange(nextStatus: string) {
-    const nextRevision = bulkRevision;
-    const previousRevision = bulkRevision;
-    const previousStatus = bulkStatus;
+  function handleBulkStatusInputChange(input: string) {
+    if (messageType === "error" && message === BULK_STATUS_INPUT_MESSAGE) {
+      setMessage("");
+    }
 
+    setBulkStatus(input.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 2));
+  }
+
+  function handleApplyBulkChangesFromMoreActions() {
+    const rawRevision = bulkRevision.trim();
+    const rawStatus = bulkStatus.trim().toUpperCase();
+    const normalizedRevision = rawRevision ? normalizeRevisionInput(rawRevision) : null;
+    const nextRevision = normalizedRevision ?? "";
+    const nextStatus = rawStatus;
+
+    if (rawRevision && !normalizedRevision) {
+      setMessage(getRevisionValidationMessage(rawRevision));
+      setMessageType("error");
+      return;
+    }
+
+    if (rawStatus && !findOptionByCode(STATUS_OPTIONS, rawStatus)) {
+      setMessage(BULK_STATUS_INPUT_MESSAGE);
+      setMessageType("error");
+      return;
+    }
+
+    if (!nextRevision && !nextStatus) {
+      return;
+    }
+
+    if (
+      messageType === "error" &&
+      (isRevisionValidationMessage(message) || message === BULK_STATUS_INPUT_MESSAGE)
+    ) {
+      setMessage("");
+    }
+
+    setBulkRevision(nextRevision);
     setBulkStatus(nextStatus);
+    setMoreActionsOpen(false);
 
     if (rows.length === 0) {
       return;
@@ -1293,11 +1375,11 @@ export function NamingView({ selectedProjectName }: NamingViewProps) {
 
     if (hasFileListChanges) {
       setPendingBulkApply({
-        changedField: "status",
+        changedField: nextRevision ? "revision" : "status",
         nextRevision,
         nextStatus,
-        previousRevision,
-        previousStatus,
+        previousRevision: nextRevision,
+        previousStatus: nextStatus,
       });
       return;
     }
@@ -1448,6 +1530,31 @@ export function NamingView({ selectedProjectName }: NamingViewProps) {
 
   function toggleRowSelection(rowId: string) {
     moveRowToIgnored(rowId);
+  }
+
+  function handleSelectableRowPointerDown(rowId: string) {
+    rowPointerDownRef.current = {
+      rowId,
+      at: Date.now(),
+    };
+  }
+
+  function handleSelectableRowClick(event: ReactMouseEvent<HTMLTableRowElement>, rowId: string) {
+    if (!shouldToggleSelectionFromTarget(event.target)) {
+      return;
+    }
+
+    const interaction = rowPointerDownRef.current;
+    rowPointerDownRef.current = null;
+    if (!interaction || interaction.rowId !== rowId) {
+      return;
+    }
+
+    if (Date.now() - interaction.at > 250) {
+      return;
+    }
+
+    toggleRowSelection(rowId);
   }
 
   function toggleAllRows() {
@@ -2303,16 +2410,80 @@ export function NamingView({ selectedProjectName }: NamingViewProps) {
 
       {moreActionsOpen ? (
         <div className="modal-backdrop" role="presentation">
-          <div className="modal-card" role="dialog" aria-modal="true" aria-labelledby="more-actions-title">
+          <div className="modal-card more-actions-modal" role="dialog" aria-modal="true" aria-labelledby="more-actions-title">
             <h3 id="more-actions-title">Więcej opcji</h3>
-            <div className="modal-button-stack">
-              <button type="button" className="ghost-button modal-button-wide" onClick={handleApplyRevisionFromFileNames}>
-                Odczytaj numer rewizji z nazwy pliku
-              </button>
-              <button type="button" className="ghost-button modal-button-wide" onClick={handleApplyStatusFromFileNames}>
-                Odczytaj status z nazwy pliku
-              </button>
+            <div className="more-actions-section">
+              <h4>Aktualizacja rewizji/statusu</h4>
+              <p>Wpisz Rewizję i/lub Status, które chcesz ustawić dla zaznaczonych plików.</p>
+              <div className="more-actions-bulk-row">
+                <label className="field more-actions-field more-actions-field-revision">
+                  <span>Rewizja</span>
+                  <input
+                    value={bulkRevision}
+                    className="more-actions-code-input"
+                    onChange={(event) => handleBulkRevisionInputChange(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        handleApplyBulkChangesFromMoreActions();
+                      }
+                    }}
+                    placeholder="R00"
+                    maxLength={3}
+                    autoFocus
+                  />
+                </label>
+                <label className="field more-actions-field more-actions-field-status">
+                  <span>Status</span>
+                  <InlineCodeSelect
+                    value={bulkStatus}
+                    options={STATUS_OPTIONS}
+                    placeholder="S0"
+                    menuLabel="Wybierz status dla zaznaczonych plików"
+                    onChange={handleBulkStatusInputChange}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={handleApplyBulkChangesFromMoreActions}
+                  disabled={rows.length === 0 || (!bulkRevision.trim() && !bulkStatus.trim())}
+                >
+                  Zastosuj
+                </button>
+              </div>
             </div>
+
+            <div className="more-actions-section">
+              <h4>Odczytaj z nazwy pliku</h4>
+              <div className="modal-button-stack more-actions-button-stack">
+                <button
+                  type="button"
+                  className="ghost-button modal-button-wide"
+                  onClick={() => {
+                    handleApplyRevisionFromFileNames();
+                    setMoreActionsOpen(false);
+                  }}
+                >
+                  Odczytaj numer rewizji z nazwy pliku
+                </button>
+                <button
+                  type="button"
+                  className="ghost-button modal-button-wide"
+                  onClick={() => {
+                    handleApplyStatusFromFileNames();
+                    setMoreActionsOpen(false);
+                  }}
+                >
+                  Odczytaj status z nazwy pliku
+                </button>
+              </div>
+              <p>
+                Wybranie jednej z opcji automatycznie zczyta numer rewizji lub status z istniejącej nazwy pliku -
+                przydatne jeżeli nadpisujesz plik.
+              </p>
+            </div>
+
             <div className="modal-actions">
               <button type="button" className="ghost-button" onClick={() => setMoreActionsOpen(false)}>
                 Zamknij
@@ -2401,7 +2572,7 @@ export function NamingView({ selectedProjectName }: NamingViewProps) {
         <div className="modal-backdrop" role="presentation">
           <div className="modal-card" role="dialog" aria-modal="true" aria-labelledby="bulk-apply-title">
             <h3 id="bulk-apply-title">Zastosować zmiany?</h3>
-            <p>Chcesz zastosować do wszystkich plików?</p>
+            <p>Chcesz zastosować te zmiany do całej bieżącej listy plików do nazwania?</p>
             <div className="modal-actions">
               <button type="button" className="ghost-button" onClick={rejectBulkApply}>
                 Nie
@@ -2518,11 +2689,10 @@ export function NamingView({ selectedProjectName }: NamingViewProps) {
 
       <div className={`naming-card naming-setup-card ${isSetupCollapsed ? "collapsed" : ""}`}>
         <>
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Nazywanie</p>
-              <h2>Pomocnik nazewnictwa</h2>
-            </div>
+        <div className="panel-header">
+          <div>
+            <h2>Pomocnik nazewnictwa</h2>
+          </div>
             <button
               type="button"
               className="filter-group-toggle"
@@ -2821,72 +2991,15 @@ export function NamingView({ selectedProjectName }: NamingViewProps) {
         </article>
       </div>
 
-      <div className="naming-card naming-bulk-card">
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Operacje</p>
-            <h2>Zastosuj do zaznaczonych</h2>
-          </div>
-        </div>
-
-        <div className="naming-bulk-grid">
-          <div className="naming-bulk-fields">
-            <label className="field">
-              <span>Rewizja</span>
-              <RevisionPresetInput
-                inputRef={bulkRevisionInputRef}
-                value={bulkRevision}
-                ariaLabel="Rewizja dla zaznaczonych plików"
-                menuLabel="Pokaż opcje rewizji dla zaznaczonych plików"
-                placeholder="Nie zmieniaj rewizji"
-                onCommit={handleBulkRevisionChange}
-                onInvalid={(message) => {
-                  setMessage(message);
-                  setMessageType("error");
-                }}
-              />
-            </label>
-
-            <label className="field">
-              <span>Status</span>
-              <select value={bulkStatus} onChange={(event) => handleBulkStatusChange(event.target.value)}>
-                <option value="">Nie zmieniaj statusu</option>
-                {STATUS_OPTIONS.map((option) => (
-                  <option key={option.code} value={option.code}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <div className="naming-bulk-actions">
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={() => void handleRefreshWorkingFolder()}
-              disabled={!workingFolder || loadingWorkingFolder}
-            >
-              {loadingWorkingFolder ? "Odświeżanie..." : "Odśwież"}
-            </button>
-
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={undoLastBulkOperation}
-              disabled={!lastBulkOperation}
-            >
-              Cofnij ostatnią operację
-            </button>
-          </div>
-        </div>
-      </div>
-
       <div className="naming-card naming-table-card">
         <div className="panel-header naming-table-panel-header">
-          <div>
-            <p className="eyebrow">Pliki</p>
+          <div className="naming-table-heading">
             <h2>Pliki do nazwania</h2>
+            <div className="status-strip naming-table-status-strip">
+              <span>{summary.total} plików w sesji</span>
+              <span>{summary.readyCount} gotowych</span>
+              <span>{summary.errorCount} z błędami</span>
+            </div>
           </div>
           <div className="naming-table-header-center">
             {extensionFilterOptions.length > 0 ? (
@@ -2927,11 +3040,6 @@ export function NamingView({ selectedProjectName }: NamingViewProps) {
             >
               Więcej...
             </button>
-            <div className="status-strip">
-              <span>{summary.total} plików w sesji</span>
-              <span>{summary.readyCount} gotowych</span>
-              <span>{summary.errorCount} z błędami</span>
-            </div>
           </div>
         </div>
 
@@ -2987,6 +3095,8 @@ export function NamingView({ selectedProjectName }: NamingViewProps) {
                     className={`${evaluatedRow.validation.status === "error" ? "invalid-row" : ""} ${
                       dragOverRowId === evaluatedRow.row.id ? "drag-over-row" : ""
                     }`.trim()}
+                    onPointerDown={() => handleSelectableRowPointerDown(evaluatedRow.row.id)}
+                    onClick={(event) => handleSelectableRowClick(event, evaluatedRow.row.id)}
                   >
                     <td className="column-index">
                       <span className="row-index-label">{rowIndex + 1}</span>
@@ -3003,6 +3113,7 @@ export function NamingView({ selectedProjectName }: NamingViewProps) {
                       className="column-file"
                       draggable
                       onDragStart={(event) => {
+                        rowPointerDownRef.current = null;
                         setDraggedRowId(evaluatedRow.row.id);
                         setDragOverRowId(evaluatedRow.row.id);
                         event.dataTransfer.effectAllowed = "move";
@@ -3029,6 +3140,7 @@ export function NamingView({ selectedProjectName }: NamingViewProps) {
                         setDragOverRowId(null);
                       }}
                       onDragEnd={() => {
+                        rowPointerDownRef.current = null;
                         setDraggedRowId(null);
                         setDragOverRowId(null);
                       }}

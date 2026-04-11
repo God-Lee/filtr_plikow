@@ -1,5 +1,6 @@
 const { dialog, ipcMain, shell } = require("electron");
 const { copyNamingFiles, listNamingFiles } = require("./naming.cjs");
+const { loadDecodingDictionary } = require("./decoding-config.cjs");
 const { listProjects, scanProject } = require("./projects.cjs");
 const { chooseDirectory, exportInvalidFilesReport } = require("./report.cjs");
 const { loadSettings, saveSettings } = require("./settings.cjs");
@@ -19,6 +20,7 @@ async function chooseProjectsRoot() {
     projectsRoot: selected.filePaths[0],
     favoriteProjects: currentSettings.favoriteProjects,
     namingViewDraft: currentSettings.namingViewDraft,
+    decodingTemplates: currentSettings.decodingTemplates,
   });
 }
 
@@ -39,6 +41,14 @@ function registerIpcHandlers() {
       namingViewDraft,
     });
   });
+  ipcMain.handle("settings:updateDecodingTemplates", async (_event, decodingTemplates) => {
+    const currentSettings = await loadSettings();
+    const normalizedTemplates = JSON.parse(JSON.stringify(decodingTemplates ?? []));
+    return saveSettings({
+      ...currentSettings,
+      decodingTemplates: normalizedTemplates,
+    });
+  });
   ipcMain.handle("projects:list", async () => {
     const settings = await loadSettings();
     if (!settings.projectsRoot) {
@@ -51,6 +61,7 @@ function registerIpcHandlers() {
     const settings = await loadSettings();
     return scanProject(settings.projectsRoot, projectName);
   });
+  ipcMain.handle("decoding:getDictionary", async () => loadDecodingDictionary());
   ipcMain.handle("dialog:chooseDirectory", async (_event, title) => chooseDirectory(title));
   ipcMain.handle("report:exportInvalidFiles", async (_event, files) => exportInvalidFilesReport(files));
   ipcMain.handle("naming:listFiles", async (_event, folderPath) => listNamingFiles(folderPath));

@@ -7,10 +7,12 @@ import {
   useState,
 } from "react";
 import { fileFilterApi } from "../../app/api";
-import type { NoticeTone, ScanResult, SortConfig, SortKey } from "../../app/types";
+import { useTransientBanner } from "../../app/useTransientBanner";
+import type { DecodeSourceFile, NoticeTone, ScanResult, SortConfig, SortKey } from "../../app/types";
 import {
   INITIAL_EXPANDED_GROUPS,
   INITIAL_FILTERS,
+  MAX_FAVORITE_PROJECTS,
   buildDisciplineFolderTooltip,
   filterFilesBySearch,
   getActiveFilterCount,
@@ -46,14 +48,23 @@ export function useFilterWorkspace() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showInvalidOnly, setShowInvalidOnly] = useState(false);
   const [showValidOnly, setShowValidOnly] = useState(false);
+  const [showSelectedOnly, setShowSelectedOnly] = useState(false);
   const [filters, setFilters] = useState<FilterOptionMap>(INITIAL_FILTERS);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(INITIAL_EXPANDED_GROUPS);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "fileName", direction: "asc" });
+  const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
   const projectPickerRef = useRef<HTMLDivElement | null>(null);
   const projectOptionRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const deferredProjectQuery = useDeferredValue(projectQuery);
+
+  useTransientBanner(errorMessage, () => setErrorMessage(""));
+  useTransientBanner(reportMessage, () => setReportMessage(""));
+
+  function dismissReportMessage() {
+    setReportMessage("");
+  }
 
   async function refreshProjects(preferredProject?: string) {
     setLoadingProjects(true);
@@ -92,8 +103,8 @@ export function useFilterWorkspace() {
   const shouldRemovePdfExtensionOption = getShouldRemovePdfExtensionOption(filters);
 
   const baseMatchingFiles = useMemo(
-    () => filterFilesBySearch(scanResult?.files ?? [], deferredSearchQuery, showInvalidOnly, showValidOnly),
-    [deferredSearchQuery, scanResult?.files, showInvalidOnly, showValidOnly],
+    () => filterFilesBySearch(scanResult?.files ?? [], deferredSearchQuery),
+    [deferredSearchQuery, scanResult?.files],
   );
 
   const filterOptions = useMemo(
@@ -116,8 +127,51 @@ export function useFilterWorkspace() {
     [favoriteProjects, projects],
   );
 
-  const filteredFiles = useMemo(() => getFilteredFiles(baseMatchingFiles, filters), [baseMatchingFiles, filters]);
+  const selectedFileIdSet = useMemo(() => new Set(selectedFileIds), [selectedFileIds]);
+
+  const selectedFileRecords = useMemo(
+    () => (scanResult?.files ?? []).filter((file) => selectedFileIdSet.has(file.id)),
+    [scanResult?.files, selectedFileIdSet],
+  );
+
+  const filesMatchingActiveFilters = useMemo(
+    () => getFilteredFiles(baseMatchingFiles, filters, showInvalidOnly, showValidOnly),
+    [baseMatchingFiles, filters, showInvalidOnly, showValidOnly],
+  );
+
+  const filteredFiles = useMemo(
+    () => (showSelectedOnly ? selectedFileRecords : filesMatchingActiveFilters),
+    [filesMatchingActiveFilters, selectedFileRecords, showSelectedOnly],
+  );
   const sortedFiles = useMemo(() => getSortedFiles(filteredFiles, sortConfig), [filteredFiles, sortConfig]);
+  const filteredValidCount = useMemo(
+    () => filteredFiles.filter((file) => file.isValid).length,
+    [filteredFiles],
+  );
+  const filteredInvalidCount = useMemo(
+    () => filteredFiles.filter((file) => !file.isValid).length,
+    [filteredFiles],
+  );
+  const selectedFiles = useMemo<DecodeSourceFile[]>(
+    () => {
+      const filesById = new Map((scanResult?.files ?? []).map((file) => [file.id, file]));
+
+      return selectedFileIds
+        .map((fileId) => filesById.get(fileId))
+        .filter((file): file is NonNullable<typeof file> => Boolean(file))
+        .map((file) => ({
+          id: file.id,
+          fileName: file.fileName,
+          absolutePath: file.absolutePath,
+          folderPath: file.folderPath,
+          extension: file.extension,
+          baseName: file.baseName,
+          projectName: file.projectName,
+          projectNumber: file.projectNumber,
+        }));
+    },
+    [scanResult?.files, selectedFileIds],
+  );
 
   useEffect(() => {
     setFavoriteProjects((current) => current.filter((project) => projects.includes(project)));
@@ -131,14 +185,14 @@ export function useFilterWorkspace() {
       return;
     }
 
-    if (!filteredProjects.includes(selectedProject)) {
+    if (selectedProject && !projects.includes(selectedProject)) {
       setSelectedProject("");
     }
 
     if (highlightedProjectIndex >= filteredProjects.length) {
       setHighlightedProjectIndex(filteredProjects.length - 1);
     }
-  }, [filteredProjects, highlightedProjectIndex, selectedProject]);
+  }, [filteredProjects, highlightedProjectIndex, projects, selectedProject]);
 
   useEffect(() => {
     if (!projectPickerOpen || highlightedProjectIndex < 0) {
@@ -170,7 +224,13 @@ export function useFilterWorkspace() {
     setFilters((current) => sanitizeSelectedFilters(current, filterOptions, shouldHideExtensionFilter));
   }, [filterOptions, shouldHideExtensionFilter]);
 
+  useEffect(() => {
+    const availableFileIds = new Set((scanResult?.files ?? []).map((file) => file.id));
+    setSelectedFileIds((current) => current.filter((fileId) => availableFileIds.has(fileId)));
+  }, [scanResult?.files]);
+
   async function handleChooseRoot() {
+    dismissReportMessage();
     const settings = await fileFilterApi.chooseProjectsRoot();
     setProjectsRoot(settings.projectsRoot);
     setFavoriteProjects(settings.favoriteProjects);
@@ -180,6 +240,8 @@ export function useFilterWorkspace() {
     setProjectQuery("");
     setProjectPickerOpen(false);
     setHighlightedProjectIndex(-1);
+    setShowSelectedOnly(false);
+    setSelectedFileIds([]);
     await refreshProjects();
   }
 
@@ -193,6 +255,7 @@ export function useFilterWorkspace() {
 
     try {
       const result = await fileFilterApi.scanProject(projectName);
+      const availableFileIds = new Set(result.files.map((file) => file.id));
       startTransition(() => {
         setScanResult(result);
         setFilters(INITIAL_FILTERS);
@@ -200,6 +263,8 @@ export function useFilterWorkspace() {
         setSearchQuery("");
         setShowInvalidOnly(false);
         setShowValidOnly(false);
+        setShowSelectedOnly(false);
+        setSelectedFileIds((current) => current.filter((fileId) => availableFileIds.has(fileId)));
       });
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Nie udało się przeskanować projektu.");
@@ -209,6 +274,7 @@ export function useFilterWorkspace() {
   }
 
   async function handleProjectSelect(project: string) {
+    dismissReportMessage();
     setHighlightedProjectIndex(-1);
     setSelectedProject(project);
     setProjectQuery(project);
@@ -221,8 +287,16 @@ export function useFilterWorkspace() {
       return;
     }
 
+    dismissReportMessage();
+
+    const projectIsFavorite = favoriteProjects.includes(selectedProject);
+    if (!projectIsFavorite && favoriteProjects.length >= MAX_FAVORITE_PROJECTS) {
+      setErrorMessage(`Możesz dodać maksymalnie ${MAX_FAVORITE_PROJECTS} ulubionych projektów.`);
+      return;
+    }
+
     try {
-      const nextFavoriteProjects = favoriteProjects.includes(selectedProject)
+      const nextFavoriteProjects = projectIsFavorite
         ? favoriteProjects.filter((project) => project !== selectedProject)
         : [...favoriteProjects, selectedProject];
 
@@ -239,6 +313,7 @@ export function useFilterWorkspace() {
       return;
     }
 
+    dismissReportMessage();
     await runScan(selectedProject);
   }
 
@@ -276,6 +351,7 @@ export function useFilterWorkspace() {
   }
 
   function toggleFilter(filterKey: string, value: string) {
+    dismissReportMessage();
     setFilters((current) => {
       const active = current[filterKey] ?? [];
       const next = active.includes(value)
@@ -284,10 +360,7 @@ export function useFilterWorkspace() {
 
       setExpandedGroups((currentExpanded) => ({
         ...currentExpanded,
-        [filterKey]:
-          filterKey === "sourceKey"
-            ? next.length === 0
-            : currentExpanded[filterKey],
+        [filterKey]: currentExpanded[filterKey],
       }));
 
       return {
@@ -298,14 +371,17 @@ export function useFilterWorkspace() {
   }
 
   function clearFilters() {
+    dismissReportMessage();
     setFilters(INITIAL_FILTERS);
     setExpandedGroups(INITIAL_EXPANDED_GROUPS);
     setSearchQuery("");
     setShowInvalidOnly(false);
     setShowValidOnly(false);
+    setShowSelectedOnly(false);
   }
 
   function toggleInvalidOnly(checked: boolean) {
+    dismissReportMessage();
     setShowInvalidOnly(checked);
     if (checked) {
       setShowValidOnly(false);
@@ -313,13 +389,20 @@ export function useFilterWorkspace() {
   }
 
   function toggleValidOnly(checked: boolean) {
+    dismissReportMessage();
     setShowValidOnly(checked);
     if (checked) {
       setShowInvalidOnly(false);
     }
   }
 
+  function toggleSelectedOnly(checked: boolean) {
+    dismissReportMessage();
+    setShowSelectedOnly(checked);
+  }
+
   function toggleSort(sortKey: SortKey) {
+    dismissReportMessage();
     setSortConfig((current) => {
       if (current.key === sortKey) {
         return {
@@ -335,15 +418,53 @@ export function useFilterWorkspace() {
     });
   }
 
-  const activeFilterCount = getActiveFilterCount(filters, showInvalidOnly, showValidOnly);
+  const activeFilterCount = getActiveFilterCount(filters, showInvalidOnly, showValidOnly, showSelectedOnly);
   const validCountTooltip = useMemo(
-    () => buildDisciplineFolderTooltip(scanResult?.files ?? [], true),
-    [scanResult?.files],
+    () => buildDisciplineFolderTooltip(filteredFiles, true),
+    [filteredFiles],
   );
   const invalidCountTooltip = useMemo(
-    () => buildDisciplineFolderTooltip(scanResult?.files ?? [], false),
-    [scanResult?.files],
+    () => buildDisciplineFolderTooltip(filteredFiles, false),
+    [filteredFiles],
   );
+
+  function toggleFileSelection(fileId: string) {
+    dismissReportMessage();
+    setSelectedFileIds((current) =>
+      current.includes(fileId) ? current.filter((selectedId) => selectedId !== fileId) : [...current, fileId],
+    );
+  }
+
+  function toggleAllVisibleFiles() {
+    if (sortedFiles.length === 0) {
+      return;
+    }
+
+    dismissReportMessage();
+    const visibleIds = sortedFiles.map((file) => file.id);
+    const areAllVisibleSelected = visibleIds.every((fileId) => selectedFileIds.includes(fileId));
+
+    setSelectedFileIds((current) =>
+      areAllVisibleSelected
+        ? current.filter((fileId) => !visibleIds.includes(fileId))
+        : Array.from(new Set([...current, ...visibleIds])),
+    );
+  }
+
+  function clearSelectedFiles() {
+    dismissReportMessage();
+    setSelectedFileIds([]);
+  }
+
+  function handleSearchQueryChange(value: string) {
+    dismissReportMessage();
+    setSearchQuery(value);
+  }
+
+  function handleProjectQueryChange(value: string) {
+    dismissReportMessage();
+    setProjectQuery(value);
+  }
 
   return {
     activeFilterCount,
@@ -358,7 +479,11 @@ export function useFilterWorkspace() {
     handleExportInvalidFilesReport,
     handleFavoriteToggle,
     handleProjectSelect,
+    handleProjectQueryChange,
     handleRefreshCurrentProject,
+    handleSearchQueryChange,
+    filteredInvalidCount,
+    filteredValidCount,
     highlightedProjectIndex,
     invalidCountTooltip,
     loadingProjects,
@@ -372,24 +497,32 @@ export function useFilterWorkspace() {
     resultsCountLabel: getFilteredFileSummaryLabel(sortedFiles.length),
     scanResult,
     scanning,
+    selectedFileIds,
+    selectedFiles,
+    selectedFilesCount: selectedFiles.length,
     searchQuery,
     selectedProject,
     selectedProjectIsFavorite: selectedProject ? favoriteProjects.includes(selectedProject) : false,
     setExpandedGroups,
     setHighlightedProjectIndex,
     setProjectPickerOpen,
-    setProjectQuery,
-    setSearchQuery,
+    setProjectQuery: handleProjectQueryChange,
+    setSearchQuery: handleSearchQueryChange,
     showInvalidOnly,
+    showSelectedOnly,
     showValidOnly,
     sortConfig,
     sortedFiles,
+    toggleAllVisibleFiles,
     toggleFilter,
+    toggleFileSelection,
     toggleInvalidOnly,
+    toggleSelectedOnly,
     toggleSort,
     toggleValidOnly,
     validCountTooltip,
     visibleFavoriteProjects,
     visibleFilterGroups,
+    clearSelectedFiles,
   };
 }

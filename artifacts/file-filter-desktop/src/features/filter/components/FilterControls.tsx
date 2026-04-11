@@ -4,18 +4,15 @@ type FilterControlsProps = {
   filteredProjects: string[];
   highlightedProjectIndex: number;
   loadingProjects: boolean;
-  onChooseRoot: () => void;
   onFavoriteToggle: () => void;
   onProjectQueryChange: (value: string) => void;
   onProjectSelect: (project: string) => void;
-  onRefreshProject: () => void;
   onSearchQueryChange: (value: string) => void;
   projectOptionRefs: MutableRefObject<Record<string, HTMLButtonElement | null>>;
   projectPickerOpen: boolean;
   projectPickerRef: RefObject<HTMLDivElement | null>;
   projectQuery: string;
   projectsRoot: string;
-  scanning: boolean;
   searchQuery: string;
   selectedProject: string;
   selectedProjectIsFavorite: boolean;
@@ -27,18 +24,15 @@ export function FilterControls({
   filteredProjects,
   highlightedProjectIndex,
   loadingProjects,
-  onChooseRoot,
   onFavoriteToggle,
   onProjectQueryChange,
   onProjectSelect,
-  onRefreshProject,
   onSearchQueryChange,
   projectOptionRefs,
   projectPickerOpen,
   projectPickerRef,
   projectQuery,
   projectsRoot,
-  scanning,
   searchQuery,
   selectedProject,
   selectedProjectIsFavorite,
@@ -52,14 +46,6 @@ export function FilterControls({
           <div className="project-field-header">
             <span>Projekt</span>
             <div className="project-field-actions">
-              <button
-                type="button"
-                className="project-folder-toggle"
-                onClick={onChooseRoot}
-                aria-label="Zmień folder projektów"
-              >
-                📁
-              </button>
               <button
                 type="button"
                 className={`favorite-toggle ${selectedProjectIsFavorite ? "active" : ""}`}
@@ -183,7 +169,7 @@ export function FilterControls({
         </div>
       </div>
 
-      <div className="control-bar search-control-bar">
+      <div className="control-bar search-control-bar search-control-bar-compact">
         <label className="field search-field">
           <span>Szukaj</span>
           <input
@@ -192,14 +178,6 @@ export function FilterControls({
             placeholder="Nazwa pliku, kod, opis, ścieżka..."
           />
         </label>
-
-        <button
-          className="ghost-button"
-          onClick={onRefreshProject}
-          disabled={!selectedProject || scanning || loadingProjects}
-        >
-          {scanning ? "Odświeżanie..." : "Odśwież"}
-        </button>
       </div>
     </section>
   );

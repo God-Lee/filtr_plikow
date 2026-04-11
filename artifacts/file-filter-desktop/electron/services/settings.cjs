@@ -2,6 +2,100 @@ const { app } = require("electron");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 
+const LEGACY_TEMPLATE_FIELD_KEYS = new Set([
+  "alias",
+  "project",
+  "projectNumber",
+  "phase",
+  "discipline",
+  "type",
+  "level",
+  "number",
+  "revision",
+  "status",
+]);
+
+const SYSTEM_TEMPLATE_FIELD_KEYS = new Set([
+  "project",
+  "projectNumber",
+  "phase",
+  "discipline",
+  "type",
+  "level",
+  "number",
+  "revision",
+  "status",
+]);
+
+const MAX_FAVORITE_PROJECTS = 10;
+
+function createTemplateFieldId() {
+  return `field-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function sanitizeTemplateField(field, aliasValue) {
+  if (typeof field === "string") {
+    if (!LEGACY_TEMPLATE_FIELD_KEYS.has(field)) {
+      return null;
+    }
+
+    if (field === "alias") {
+      const value = typeof aliasValue === "string" ? aliasValue.trim() : "";
+      if (!value) {
+        return null;
+      }
+
+      return {
+        id: createTemplateFieldId(),
+        kind: "custom",
+        label: "Alias",
+        value,
+      };
+    }
+
+    return {
+      id: createTemplateFieldId(),
+      kind: "system",
+      key: field,
+    };
+  }
+
+  if (!field || typeof field !== "object") {
+    return null;
+  }
+
+  if (field.kind === "system" && typeof field.key === "string" && SYSTEM_TEMPLATE_FIELD_KEYS.has(field.key)) {
+    const id =
+      typeof field.id === "string" && field.id.trim().length > 0 ? field.id.trim() : createTemplateFieldId();
+
+    return {
+      id,
+      kind: "system",
+      key: field.key,
+    };
+  }
+
+  if (field.kind === "custom") {
+    const label = typeof field.label === "string" ? field.label.trim() : "";
+    const value = typeof field.value === "string" ? field.value : "";
+    if (!label || !value.trim()) {
+      return null;
+    }
+
+    const id =
+      typeof field.id === "string" && field.id.trim().length > 0 ? field.id.trim() : createTemplateFieldId();
+
+    return {
+      id,
+      kind: "custom",
+      label,
+      value,
+    };
+  }
+
+  return null;
+}
+
 function getDefaultNamingViewDraft() {
   return {
     projectNumber: "",
@@ -14,6 +108,38 @@ function getDefaultNamingViewDraft() {
     targetFolder: "",
     ignoredSourcePathsByFolder: {},
   };
+}
+
+function sanitizeDecodingTemplates(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seenIds = new Set();
+
+  return value
+    .filter((item) => item && typeof item === "object")
+    .map((item, index) => {
+      const idSource = typeof item.id === "string" && item.id.trim() ? item.id.trim() : `template-${index}`;
+      const id = seenIds.has(idSource) ? `${idSource}-${index}` : idSource;
+      seenIds.add(id);
+
+      const fields = Array.isArray(item.fields)
+        ? item.fields
+            .map((field) => sanitizeTemplateField(field, item.alias))
+            .filter(Boolean)
+        : [];
+
+      return {
+        id,
+        name: typeof item.name === "string" ? item.name.trim() : "",
+        prefix: typeof item.prefix === "string" ? item.prefix : "",
+        suffix: typeof item.suffix === "string" ? item.suffix : "",
+        separator: typeof item.separator === "string" ? item.separator.slice(0, 1) : "",
+        fields,
+      };
+    })
+    .filter((item) => item.name && item.fields.length > 0);
 }
 
 function sanitizeNamingViewDraft(value) {
@@ -57,7 +183,7 @@ function sanitizeFavoriteProjects(value) {
 
   return Array.from(
     new Set(value.filter((projectName) => typeof projectName === "string" && projectName.trim().length > 0)),
-  ).slice(0, 5);
+  ).slice(0, MAX_FAVORITE_PROJECTS);
 }
 
 function getConfigPath() {
@@ -72,12 +198,14 @@ async function loadSettings() {
       projectsRoot: typeof parsed.projectsRoot === "string" ? parsed.projectsRoot : "",
       favoriteProjects: sanitizeFavoriteProjects(parsed.favoriteProjects),
       namingViewDraft: sanitizeNamingViewDraft(parsed.namingViewDraft),
+      decodingTemplates: sanitizeDecodingTemplates(parsed.decodingTemplates),
     };
   } catch {
     return {
       projectsRoot: "",
       favoriteProjects: [],
       namingViewDraft: getDefaultNamingViewDraft(),
+      decodingTemplates: [],
     };
   }
 }
@@ -87,6 +215,7 @@ async function saveSettings(settings) {
     projectsRoot: typeof settings.projectsRoot === "string" ? settings.projectsRoot : "",
     favoriteProjects: sanitizeFavoriteProjects(settings.favoriteProjects),
     namingViewDraft: sanitizeNamingViewDraft(settings.namingViewDraft),
+    decodingTemplates: sanitizeDecodingTemplates(settings.decodingTemplates),
   };
 
   await fs.mkdir(path.dirname(getConfigPath()), { recursive: true });
@@ -99,4 +228,5 @@ module.exports = {
   saveSettings,
   sanitizeFavoriteProjects,
   sanitizeNamingViewDraft,
+  sanitizeDecodingTemplates,
 };

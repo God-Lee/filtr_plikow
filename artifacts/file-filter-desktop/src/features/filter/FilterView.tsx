@@ -5,28 +5,26 @@ import { ResultsTable } from "./components/ResultsTable";
 import { useFilterWorkspace } from "./useFilterWorkspace";
 
 type FilterViewProps = {
+  onDecodeSelected: () => void;
   workspace: ReturnType<typeof useFilterWorkspace>;
 };
 
-export function FilterView({ workspace }: FilterViewProps) {
+export function FilterView({ onDecodeSelected, workspace }: FilterViewProps) {
   return (
     <>
       <FilterControls
         filteredProjects={workspace.filteredProjects}
         highlightedProjectIndex={workspace.highlightedProjectIndex}
         loadingProjects={workspace.loadingProjects}
-        onChooseRoot={() => void workspace.handleChooseRoot()}
         onFavoriteToggle={() => void workspace.handleFavoriteToggle()}
         onProjectQueryChange={workspace.setProjectQuery}
         onProjectSelect={(project) => void workspace.handleProjectSelect(project)}
-        onRefreshProject={() => void workspace.handleRefreshCurrentProject()}
         onSearchQueryChange={workspace.setSearchQuery}
         projectOptionRefs={workspace.projectOptionRefs}
         projectPickerOpen={workspace.projectPickerOpen}
         projectPickerRef={workspace.projectPickerRef}
         projectQuery={workspace.projectQuery}
         projectsRoot={workspace.projectsRoot}
-        scanning={workspace.scanning}
         searchQuery={workspace.searchQuery}
         selectedProject={workspace.selectedProject}
         selectedProjectIsFavorite={workspace.selectedProjectIsFavorite}
@@ -49,14 +47,14 @@ export function FilterView({ workspace }: FilterViewProps) {
           activeFilterCount={workspace.activeFilterCount}
           clearFilters={workspace.clearFilters}
           expandedGroups={workspace.expandedGroups}
-          exportingInvalidReport={workspace.exportingInvalidReport}
           filterOptions={workspace.filterOptions}
           filters={workspace.filters}
+          invalidCount={workspace.filteredInvalidCount}
           invalidCountTooltip={workspace.invalidCountTooltip}
-          onExportInvalidFilesReport={() => void workspace.handleExportInvalidFilesReport()}
-          scanResult={workspace.scanResult}
           setExpandedGroups={workspace.setExpandedGroups}
           showInvalidOnly={workspace.showInvalidOnly}
+          totalFiles={workspace.sortedFiles.length}
+          validCount={workspace.filteredValidCount}
           showValidOnly={workspace.showValidOnly}
           toggleFilter={workspace.toggleFilter}
           toggleInvalidOnly={workspace.toggleInvalidOnly}
@@ -66,12 +64,22 @@ export function FilterView({ workspace }: FilterViewProps) {
         />
 
         <ResultsTable
+          onClearSelection={workspace.clearSelectedFiles}
+          onDecodeSelected={onDecodeSelected}
           onOpenFile={(targetPath) => void fileFilterApi.openFile(targetPath)}
           onOpenFolder={(targetPath) => void fileFilterApi.openFolder(targetPath)}
+          onRefreshProject={() => void workspace.handleRefreshCurrentProject()}
+          onToggleSelectedOnly={workspace.toggleSelectedOnly}
           resultsCountLabel={workspace.resultsCountLabel}
           scanResult={workspace.scanResult}
+          scanning={workspace.scanning}
+          selectedFileIds={workspace.selectedFileIds}
+          selectedFilesCount={workspace.selectedFilesCount}
+          showSelectedOnly={workspace.showSelectedOnly}
           sortedFiles={workspace.sortedFiles}
           sortConfig={workspace.sortConfig}
+          toggleAllVisibleFiles={workspace.toggleAllVisibleFiles}
+          toggleFileSelection={workspace.toggleFileSelection}
           toggleSort={workspace.toggleSort}
         />
       </main>

@@ -1,6 +1,51 @@
-export type AppView = "filter" | "naming";
+export type AppView = "filter" | "naming" | "decoding";
 
 export type NoticeTone = "error" | "muted" | "success";
+
+export type DecodingTemplateSystemFieldKey =
+  | "project"
+  | "projectNumber"
+  | "phase"
+  | "discipline"
+  | "type"
+  | "level"
+  | "number"
+  | "revision"
+  | "status";
+
+export type DecodingTemplateField =
+  | {
+      id: string;
+      kind: "system";
+      key: DecodingTemplateSystemFieldKey;
+    }
+  | {
+      id: string;
+      kind: "custom";
+      label: string;
+      value: string;
+    };
+
+export type DecodingTemplateLegacyField =
+  | "alias"
+  | "project"
+  | "projectNumber"
+  | "phase"
+  | "discipline"
+  | "type"
+  | "level"
+  | "number"
+  | "revision"
+  | "status";
+
+export type DecodingTemplate = {
+  id: string;
+  name: string;
+  prefix: string;
+  suffix: string;
+  separator: string;
+  fields: DecodingTemplateField[];
+};
 
 export type NamingViewDraft = {
   projectNumber: string;
@@ -18,6 +63,7 @@ export type AppSettings = {
   projectsRoot: string;
   favoriteProjects: string[];
   namingViewDraft: NamingViewDraft;
+  decodingTemplates: DecodingTemplate[];
 };
 
 export type ParsedSegments = {
@@ -48,6 +94,31 @@ export type FileRecord = {
   invalidReason: string | null;
   rawSegments: string[];
   parsedSegments: ParsedSegments | null;
+};
+
+export type DecodeSourceFile = {
+  id: string;
+  fileName: string;
+  absolutePath: string;
+  folderPath: string;
+  extension: string;
+  baseName: string;
+  projectName?: string;
+  projectNumber?: string;
+};
+
+export type DecodingDictionaryValues = {
+  projects: Record<string, string>;
+  phases: Record<string, string>;
+  disciplines: Record<string, string>;
+  documentTypes: Record<string, string>;
+  levels: Record<string, string>;
+  statuses: Record<string, string>;
+};
+
+export type DecodingDictionary = {
+  path: string;
+  values: DecodingDictionaryValues;
 };
 
 export type ScanResult = {
@@ -89,6 +160,12 @@ export type FavoriteProjectCard = {
   projectName: string;
   number: string;
   label: string;
+};
+
+export type NamingHeroMenuState = {
+  canRefreshWorkingFolder: boolean;
+  refreshWorkingFolderLabel: string;
+  canUndoLastOperation: boolean;
 };
 
 export type NamingFolderFile = {
@@ -194,16 +271,19 @@ export interface FileFilterApi {
   chooseProjectsRoot: () => Promise<AppSettings>;
   updateFavoriteProjects: (favoriteProjects: string[]) => Promise<AppSettings>;
   updateNamingViewDraft: (namingViewDraft: NamingViewDraft) => Promise<AppSettings>;
+  updateDecodingTemplates: (decodingTemplates: DecodingTemplate[]) => Promise<AppSettings>;
   listProjects: () => Promise<string[]>;
   scanProject: (projectName: string) => Promise<ScanResult>;
   exportInvalidFilesReport: (
     files: InvalidReportFile[],
   ) => Promise<ExportInvalidFilesReportResult>;
+  getDecodingDictionary: () => Promise<DecodingDictionary>;
   chooseDirectory: (title: string) => Promise<string | null>;
   listNamingFiles: (folderPath: string) => Promise<NamingFilesResult>;
   copyNamingFiles: (items: FileCopyItem[]) => Promise<{ copiedCount: number }>;
   openFile: (targetPath: string) => Promise<void>;
   openFolder: (targetPath: string) => Promise<void>;
+  getPathForDroppedFile: (file: File) => string;
 }
 
 declare global {

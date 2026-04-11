@@ -1,17 +1,17 @@
-import type { FileRecord, FilterGroup, ScanResult } from "../../../app/types";
+import type { FileRecord, FilterGroup } from "../../../app/types";
 
 type FiltersPanelProps = {
   activeFilterCount: number;
   clearFilters: () => void;
   expandedGroups: Record<string, boolean>;
-  exportingInvalidReport: boolean;
   filterOptions: Record<string, string[]>;
   filters: Record<string, string[]>;
+  invalidCount: number;
   invalidCountTooltip: string;
-  onExportInvalidFilesReport: () => void;
-  scanResult: ScanResult | null;
   setExpandedGroups: (updater: Record<string, boolean> | ((current: Record<string, boolean>) => Record<string, boolean>)) => void;
   showInvalidOnly: boolean;
+  totalFiles: number;
+  validCount: number;
   showValidOnly: boolean;
   toggleFilter: (filterKey: string, value: string) => void;
   toggleInvalidOnly: (checked: boolean) => void;
@@ -24,14 +24,14 @@ export function FiltersPanel({
   activeFilterCount,
   clearFilters,
   expandedGroups,
-  exportingInvalidReport,
   filterOptions,
   filters,
+  invalidCount,
   invalidCountTooltip,
-  onExportInvalidFilesReport,
-  scanResult,
   setExpandedGroups,
   showInvalidOnly,
+  totalFiles,
+  validCount,
   showValidOnly,
   toggleFilter,
   toggleInvalidOnly,
@@ -42,42 +42,52 @@ export function FiltersPanel({
   return (
     <aside className="filters-panel">
       <div className="panel-header">
-        <h2 className="filters-title">Filtry</h2>
+        <div className="filters-title-wrap">
+          <h2 className="filters-title">Filtry</h2>
+          <div className="filters-insight">
+            <button
+              type="button"
+              className="filters-insight-trigger"
+              aria-label="Pokaż podsumowanie filtrów"
+            >
+              <span aria-hidden="true">💡</span>
+            </button>
+            <div className="filters-insight-popover" role="tooltip">
+              <article className="filters-insight-item">
+                <span>Wszystkie</span>
+                <strong>{totalFiles}</strong>
+              </article>
+              <article className="filters-insight-item">
+                <span>Poprawne</span>
+                <strong
+                  className={validCountTooltip ? "summary-card-value with-tooltip" : "summary-card-value"}
+                  data-tooltip={validCountTooltip || undefined}
+                >
+                  {validCount}
+                </strong>
+              </article>
+              <article className="filters-insight-item invalid">
+                <span>Błędne</span>
+                <strong
+                  className={invalidCountTooltip ? "summary-card-value with-tooltip" : "summary-card-value"}
+                  data-tooltip={invalidCountTooltip || undefined}
+                >
+                  {invalidCount}
+                </strong>
+              </article>
+              <article className="filters-insight-item">
+                <span>Aktywne filtry</span>
+                <strong>{activeFilterCount}</strong>
+              </article>
+            </div>
+          </div>
+        </div>
         <button className="link-button" onClick={clearFilters}>
           Resetuj
         </button>
       </div>
 
       <div className="filters-panel-scroll">
-        <div className="summary-grid">
-          <article className="summary-card">
-            <span>Wszystkie</span>
-            <strong>{scanResult?.totalFiles ?? 0}</strong>
-          </article>
-          <article className="summary-card">
-            <span>Poprawne</span>
-            <strong
-              className={validCountTooltip ? "summary-card-value with-tooltip" : "summary-card-value"}
-              data-tooltip={validCountTooltip || undefined}
-            >
-              {scanResult?.validCount ?? 0}
-            </strong>
-          </article>
-          <article className="summary-card invalid">
-            <span>Błędne</span>
-            <strong
-              className={invalidCountTooltip ? "summary-card-value with-tooltip" : "summary-card-value"}
-              data-tooltip={invalidCountTooltip || undefined}
-            >
-              {scanResult?.invalidCount ?? 0}
-            </strong>
-          </article>
-          <article className="summary-card">
-            <span>Aktywne filtry</span>
-            <strong>{activeFilterCount}</strong>
-          </article>
-        </div>
-
         <div className="filter-groups">
           {visibleFilterGroups.map((group) => {
             const options = filterOptions[group.key] ?? [];
@@ -109,9 +119,7 @@ export function FiltersPanel({
 
                 {expandedGroups[group.key] ? (
                   <div
-                    className={`chip-grid ${
-                      group.key !== "sourceKey" && group.key !== "extensionLabel" ? "stacked-chip-grid" : ""
-                    }`}
+                    className={`chip-grid ${group.key !== "extensionLabel" ? "stacked-chip-grid" : ""}`}
                   >
                     {options.length === 0 ? <p className="empty-copy">Brak danych po skanowaniu.</p> : null}
                     {options.map((option) => {
@@ -152,15 +160,6 @@ export function FiltersPanel({
             <span>Tylko poprawne</span>
           </label>
         </div>
-
-        <button
-          type="button"
-          className="primary-button filter-export-button"
-          onClick={onExportInvalidFilesReport}
-          disabled={!scanResult || exportingInvalidReport || (scanResult.invalidCount ?? 0) === 0}
-        >
-          {exportingInvalidReport ? "Eksportowanie..." : "Eksportuj raport błędnych plików"}
-        </button>
       </div>
     </aside>
   );

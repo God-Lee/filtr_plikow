@@ -11,8 +11,11 @@ import { matchesSearchToken, normalizeText, tokenizeText } from "../../app/utils
 
 type FilterOptionMap = Record<string, string[]>;
 
+export const MAX_FAVORITE_PROJECTS = 10;
+
 const EXTENSION_GROUP_LABELS: Record<string, string> = {
   ".doc": "Word",
+  ".docm": "Word",
   ".docx": "Word",
   ".dwg": "CAD",
   ".jpg": "Obraz",
@@ -43,8 +46,7 @@ export const SORTABLE_COLUMNS: Array<{ key: SortKey; label: string; className?: 
 ];
 
 export const FILTER_GROUPS: FilterGroup<FileRecord>[] = [
-  { key: "sourceKey", label: "Typ plików", getValue: (file) => file.sourceLabel },
-  { key: "extensionLabel", label: "Rozszerzenie", getValue: (file) => getExtensionFilterLabel(file) },
+  { key: "extensionLabel", label: "Typ plików", getValue: (file) => getExtensionFilterLabel(file) },
   { key: "phase", label: "Faza", getValue: (file) => getPhaseFilterLabel(file) },
   { key: "disciplineCode", label: "Branża", getValue: (file) => getDisciplineFilterLabel(file) },
   { key: "documentType", label: "Typ", getValue: (file) => getDocumentTypeFilterLabel(file) },
@@ -108,10 +110,12 @@ export function getActiveFilterCount(
   filters: FilterOptionMap,
   showInvalidOnly: boolean,
   showValidOnly: boolean,
+  showSelectedOnly: boolean,
 ) {
   return (
     Object.values(filters).reduce((sum, values) => sum + values.length, 0) +
-    (showInvalidOnly || showValidOnly ? 1 : 0)
+    (showInvalidOnly || showValidOnly ? 1 : 0) +
+    (showSelectedOnly ? 1 : 0)
   );
 }
 
@@ -129,25 +133,20 @@ export function getFilteredProjects(projects: string[], projectQuery: string, se
 export function getVisibleFavoriteProjects(projects: string[], favoriteProjects: string[]) {
   return favoriteProjects
     .filter((project) => projects.includes(project))
-    .slice(0, 5)
+    .slice(0, MAX_FAVORITE_PROJECTS)
     .map((projectName) => buildFavoriteProjectCard(projectName));
 }
 
 export function getShouldHideExtensionFilter(filters: FilterOptionMap) {
-  return (filters.sourceKey?.length ?? 0) === 1 && filters.sourceKey?.[0] === "PDF";
+  return false;
 }
 
 export function getShouldRemovePdfExtensionOption(filters: FilterOptionMap) {
-  return (filters.sourceKey?.length ?? 0) === 1 && filters.sourceKey?.[0] === "Pozostałe";
+  return false;
 }
 
-export function filterFilesBySearch(
-  files: FileRecord[],
-  query: string,
-  showInvalidOnly: boolean,
-  showValidOnly: boolean,
-) {
-  return files.filter((file) => matchesBaseCriteria(file, query, showInvalidOnly, showValidOnly));
+export function filterFilesBySearch(files: FileRecord[], query: string) {
+  return files.filter((file) => matchesSearchCriteria(file, query));
 }
 
 export function getFilterOptions(
@@ -212,8 +211,17 @@ export function sanitizeSelectedFilters(
   return hasChanges ? nextFilters : filters;
 }
 
-export function getFilteredFiles(files: FileRecord[], filters: FilterOptionMap) {
-  return files.filter((file) => matchesSelectedFilters(file, filters, FILTER_GROUPS));
+export function getFilteredFiles(
+  files: FileRecord[],
+  filters: FilterOptionMap,
+  showInvalidOnly: boolean,
+  showValidOnly: boolean,
+) {
+  return files.filter(
+    (file) =>
+      matchesSelectedFilters(file, filters, FILTER_GROUPS) &&
+      matchesValidityCriteria(file, showInvalidOnly, showValidOnly),
+  );
 }
 
 export function getSortedFiles(files: FileRecord[], sortConfig: SortConfig) {
@@ -374,12 +382,7 @@ function getDisciplineFolderLabel(folderName: string) {
   return folderName.replace(/^\d+\.\s*/, "");
 }
 
-function matchesBaseCriteria(
-  file: FileRecord,
-  query: string,
-  showInvalidOnly: boolean,
-  showValidOnly: boolean,
-) {
+function matchesValidityCriteria(file: FileRecord, showInvalidOnly: boolean, showValidOnly: boolean) {
   if (showInvalidOnly && file.isValid) {
     return false;
   }
@@ -388,6 +391,10 @@ function matchesBaseCriteria(
     return false;
   }
 
+  return true;
+}
+
+function matchesSearchCriteria(file: FileRecord, query: string) {
   if (!query) {
     return true;
   }
@@ -460,13 +467,8 @@ function extractOptions(files: FileRecord[], group: FilterGroup<FileRecord>) {
   files.forEach((file) => values.add(group.getValue(file)));
 
   const options = Array.from(values);
-  if (group.key === "sourceKey") {
-    const sourceOrder = ["PDF", "Pozostałe"];
-    return options.sort((left, right) => sourceOrder.indexOf(left) - sourceOrder.indexOf(right));
-  }
-
   if (group.key === "extensionLabel") {
-    return sortWithInvalidLast(options, ["Word", "Excel", "CAD", "Obraz", "PDF"]);
+    return sortWithInvalidLast(options, ["PDF", "Word", "Excel", "CAD", "Obraz"]);
   }
 
   if (group.key === "phase") {

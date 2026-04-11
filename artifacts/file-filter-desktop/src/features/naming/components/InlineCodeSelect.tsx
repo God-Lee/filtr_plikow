@@ -7,6 +7,7 @@ type InlineCodeSelectProps = {
   options: NamingOption[];
   placeholder?: string;
   menuLabel: string;
+  displayMode?: "code" | "label";
   onChange: (nextValue: string) => void;
 };
 
@@ -15,11 +16,12 @@ export function InlineCodeSelect({
   options,
   placeholder = "Wybierz",
   menuLabel,
+  displayMode = "code",
   onChange,
 }: InlineCodeSelectProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const selectedOption = value ? findOptionByCode(options, value) : null;
+  const selectedOption = options.find((option) => option.code === value) ?? null;
 
   useEffect(() => {
     if (!open) {
@@ -44,7 +46,7 @@ export function InlineCodeSelect({
         aria-label={menuLabel}
         onClick={() => setOpen((current) => !current)}
       >
-        <span>{selectedOption?.code ?? placeholder}</span>
+        <span>{selectedOption ? (displayMode === "label" ? selectedOption.label : selectedOption.code) : placeholder}</span>
         <span className="inline-code-select-arrow">▾</span>
       </button>
 
