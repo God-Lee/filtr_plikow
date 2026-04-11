@@ -39,6 +39,10 @@ Ten plik jest źródłem prawdy dla decyzji UI w tym projekcie i w kolejnych ite
 ## Pola i formularze
 
 - Pola tekstowe, selecty i przyciski w jednym obszarze roboczym mają wyglądać jak elementy jednego systemu, nie jak trzy różne komponenty.
+- Nowe kontrolki nie definiują własnych wymiarów i typografii od zera, jeśli da się użyć wspólnych tokenów albo wspólnej klasy bazowej.
+- Domyślna kontrolka w projekcie ma mieć wspólny zestaw parametrów: ten sam krój pisma, bazowy rozmiar fontu, wysokość, radius i poziomy padding. Wyjątki muszą być świadome i uzasadnione kontekstem.
+- `input`, `select`, trigger dropdownu i przycisk w jednym rzędzie mają korzystać z tego samego "chrome'u" kontrolki. Jeśli jedna z tych rzeczy wygląda inaczej przez natywny rendering przeglądarki, trzeba go nadpisać.
+- Focus i active state kontrolek mają być projektowe, a nie natywne systemowe. Nie dopuszczamy do mieszania własnych styli z domyślną obwódką przeglądarki.
 - Każde pole, które może się zwężać, musi mieć świadomie ustawione `min-width: 0` po stronie kontenera lub dziecka, żeby nie wypychało układu.
 - Układy formularzy budujemy na `grid` albo przewidywalnym `flex`, z jasnym zachowaniem na breakpointach. Nie polegamy na przypadkowym ściskaniu zawartości.
 - Jeśli w jednym rzędzie są dwa lub więcej pól, to przy mniejszej szerokości mają:
@@ -94,6 +98,7 @@ Zmiana UI jest gotowa dopiero wtedy, gdy:
 - elementy są wyrównane optycznie i technicznie,
 - nic się nie nakłada po zmniejszeniu szerokości,
 - pola zachowują spójne rozmiary i odstępy,
+- kontrolki w tym samym kontekście korzystają z tego samego zestawu domyślnych parametrów, a nie z lokalnych wyjątków,
 - nazwy są spójne z resztą aplikacji,
 - dropdowny, tabele i panele zachowują się przewidywalnie,
 - cały ekran nadal da się szybko zeskanować bez szukania głównej akcji.
@@ -101,6 +106,7 @@ Zmiana UI jest gotowa dopiero wtedy, gdy:
 ## Checklista przed zamknięciem zadania UI
 
 - Czy pola w jednym rzędzie mają wspólną linię i wysokość?
+- Czy input, select, dropdown trigger i przycisk w tym samym bloku mają ten sam domyślny font, height, radius i padding?
 - Czy po zwężeniu okna do około `1366 px` nic na nic nie nachodzi?
 - Czy grupy akcji zawijają się zamiast ściskać?
 - Czy tabela lub lista psuje layout, czy tylko przewija się wewnętrznie?

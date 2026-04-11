@@ -2445,7 +2445,7 @@ export function NamingView({
                 </label>
                 <button
                   type="button"
-                  className="primary-button"
+                  className="primary-button more-actions-apply-button"
                   onClick={handleApplyBulkChangesFromMoreActions}
                   disabled={rows.length === 0 || (!bulkRevision.trim() && !bulkStatus.trim())}
                 >

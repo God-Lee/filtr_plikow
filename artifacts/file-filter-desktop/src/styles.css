@@ -3,6 +3,15 @@
   font-family: "Trebuchet MS", "Segoe UI", sans-serif;
   line-height: 1.4;
   font-weight: 400;
+  --ui-control-font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  --ui-control-font-size: 16px;
+  --ui-control-line-height: 1;
+  --ui-control-height: 46px;
+  --ui-control-height-compact: 42px;
+  --ui-control-radius: 14px;
+  --ui-control-radius-compact: 12px;
+  --ui-control-padding-x: 18px;
+  --ui-control-padding-x-compact: 12px;
   color: #1d2329;
   background:
     radial-gradient(circle at top left, rgba(222, 182, 109, 0.35), transparent 28%),
@@ -356,12 +365,15 @@ button {
 .field input,
 .field select {
   width: 100%;
-  min-height: 46px;
+  min-height: var(--ui-control-height);
   padding: 0 14px;
-  border-radius: 14px;
+  border-radius: var(--ui-control-radius);
   border: 1px solid rgba(82, 98, 117, 0.18);
   background: rgba(246, 248, 251, 0.96);
   color: #17212b;
+  font-family: var(--ui-control-font-family);
+  font-size: var(--ui-control-font-size);
+  line-height: var(--ui-control-line-height);
 }
 
 .project-picker-field {
@@ -493,10 +505,13 @@ button {
 .primary-button,
 .secondary-button,
 .ghost-button {
-  min-height: 46px;
-  padding: 0 18px;
-  border-radius: 14px;
+  min-height: var(--ui-control-height);
+  padding: 0 var(--ui-control-padding-x);
+  border-radius: var(--ui-control-radius);
+  font-family: var(--ui-control-font-family);
+  font-size: var(--ui-control-font-size);
   font-weight: 700;
+  line-height: var(--ui-control-line-height);
 }
 
 .primary-button {
@@ -1100,8 +1115,9 @@ button {
 }
 
 .more-actions-bulk-row {
+  --more-actions-control-width: 124px;
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 12px;
   flex-wrap: wrap;
   margin-top: 16px;
@@ -1109,37 +1125,52 @@ button {
 
 .more-actions-field {
   flex: 0 0 auto;
+  display: grid;
+  grid-template-rows: 16px 42px;
+  gap: 8px;
+  align-content: start;
 }
 
 .more-actions-field-revision {
-  width: 96px;
+  width: var(--more-actions-control-width);
 }
 
 .more-actions-field-status {
-  width: 96px;
+  width: var(--more-actions-control-width);
 }
 
 .more-actions-code-input {
   width: 100%;
-  min-height: 42px;
-  padding: 0 12px;
-  border-radius: 12px;
+  height: var(--ui-control-height-compact);
+  min-height: var(--ui-control-height-compact);
+  padding: 0 var(--ui-control-padding-x-compact);
+  border-radius: var(--ui-control-radius-compact);
   border: 1px solid rgba(82, 98, 117, 0.18);
   background: rgba(246, 248, 251, 0.96);
   color: #17212b;
   text-transform: uppercase;
   text-align: center;
+  appearance: none;
+  outline: none;
+  font-family: var(--ui-control-font-family);
+  font-size: var(--ui-control-font-size);
   font-weight: 700;
   letter-spacing: 0.04em;
-  font: inherit;
-  font-size: 16px;
-  line-height: 1;
+  line-height: var(--ui-control-line-height);
 }
 
 .more-actions-code-input::placeholder {
-  color: #7b8492;
-  font-weight: 600;
-  letter-spacing: normal;
+  color: rgba(23, 33, 43, 0.58);
+  font-family: var(--ui-control-font-family);
+  font-size: var(--ui-control-font-size);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.more-actions-code-input:focus {
+  border-color: rgba(79, 137, 184, 0.55);
+  box-shadow: 0 0 0 4px rgba(79, 137, 184, 0.12);
 }
 
 .more-actions-button-stack {
@@ -1147,21 +1178,57 @@ button {
 }
 
 .more-actions-field .inline-code-select-trigger {
-  min-height: 42px;
-  border-radius: 12px;
-  padding: 0 12px;
-  font: inherit;
-  font-size: 16px;
+  height: var(--ui-control-height-compact);
+  min-height: var(--ui-control-height-compact);
+  border-radius: var(--ui-control-radius-compact);
+  padding: 0 var(--ui-control-padding-x-compact);
+  appearance: none;
+  outline: none;
+  box-shadow: none;
+  font-family: var(--ui-control-font-family);
+  font-size: var(--ui-control-font-size);
   font-weight: 700;
-  line-height: 1;
+  letter-spacing: 0.04em;
+  line-height: var(--ui-control-line-height);
 }
 
 .more-actions-field-status .inline-code-select-trigger {
+  position: relative;
   justify-content: center;
+  padding: 0 30px 0 12px;
+}
+
+.more-actions-field .inline-code-select-trigger,
+.more-actions-field .inline-code-select-trigger span,
+.more-actions-code-input {
+  font-family: var(--ui-control-font-family);
 }
 
 .more-actions-field .inline-code-select-trigger span:first-child {
   flex: 0 1 auto;
+}
+
+.more-actions-field-status .inline-code-select-trigger span:first-child {
+  width: 100%;
+  text-align: center;
+  font-family: var(--ui-control-font-family);
+  font-size: var(--ui-control-font-size);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: var(--ui-control-line-height);
+}
+
+.more-actions-field .inline-code-select-trigger:focus-visible,
+.more-actions-field .inline-code-select.open .inline-code-select-trigger {
+  border-color: rgba(79, 137, 184, 0.55);
+  box-shadow: 0 0 0 4px rgba(79, 137, 184, 0.12);
+}
+
+.more-actions-field-status .inline-code-select-arrow {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
 }
 
 .more-actions-field-status .inline-code-select-menu {
@@ -1169,7 +1236,24 @@ button {
 }
 
 .more-actions-field > span {
-  min-height: 15px;
+  min-height: 16px;
+  display: flex;
+  align-items: center;
+}
+
+.more-actions-apply-button {
+  align-self: end;
+  width: var(--more-actions-control-width);
+  height: var(--ui-control-height-compact);
+  min-height: var(--ui-control-height-compact);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--ui-control-padding-x-compact);
+  border-radius: var(--ui-control-radius-compact);
+  font-family: var(--ui-control-font-family);
+  font-size: var(--ui-control-font-size);
+  line-height: var(--ui-control-line-height);
 }
 
 .modal-actions.centered {
@@ -2561,10 +2645,13 @@ tbody tr:hover {
   width: 100%;
   min-height: 40px;
   padding: 0 12px;
-  border-radius: 12px;
+  border-radius: var(--ui-control-radius-compact);
   border: 1px solid rgba(82, 98, 117, 0.18);
   background: rgba(246, 248, 251, 0.96);
   color: #17212b;
+  font-family: var(--ui-control-font-family);
+  font-size: var(--ui-control-font-size);
+  line-height: var(--ui-control-line-height);
 }
 
 .inline-code-select {
@@ -2643,6 +2730,9 @@ tbody tr:hover {
   justify-content: space-between;
   gap: 8px;
   text-align: left;
+  font-family: var(--ui-control-font-family);
+  font-size: var(--ui-control-font-size);
+  line-height: var(--ui-control-line-height);
 }
 
 .inline-code-select-trigger.placeholder {
