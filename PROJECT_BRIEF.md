@@ -47,6 +47,13 @@ Desktopowe narzędzie do szybkiego filtrowania, porządkowania i przygotowywania
 - Wersja mobilna.
 - Rozbudowane raportowanie, jeśli nie wpływa bezpośrednio na codzienny workflow.
 
+## Doprecyzowanie zakresu standardu nazewnictwa
+
+- Moduł instrukcji standardu nazewnictwa mieści się w głównym celu produktu, bo skraca onboarding i ogranicza zgadywanie przy pracy na nazwach plików.
+- Ewentualny „administrator” na tym etapie oznacza tryb zaawansowany lub świadomą edycję konfiguracji, a nie osobny system ról i uprawnień.
+- Dodawanie nowych kodów w istniejących segmentach może wejść do zwykłego rozwoju produktu.
+- Zmiana układu segmentów standardowej nazwy, np. dodanie nowego pola, nie powinna być traktowana jako drobna korekta w locie, tylko jako osobna iteracja z jasno zamrożonym zakresem.
+
 ## Kryteria akceptacji
 
 - Główne flow da się przejść bez blokujących niejasności.
@@ -79,6 +86,7 @@ Desktopowe narzędzie do szybkiego filtrowania, porządkowania i przygotowywania
 - Użytkownik pracuje głównie na jednym monitorze w układzie desktopowym.
 - Priorytetem jest szybkość operacyjna, nie marketingowa prezentacja produktu.
 - Liczba iteracji spadnie, jeśli nazwy pól, kolejność kroków i reguły UI zostaną zamrożone wcześnie.
+- Standard nazewnictwa powinien mieć jedno główne źródło prawdy współdzielone przez moduły aplikacji.
 
 ## Brief dla kolejnego zadania
 

@@ -1,5 +1,9 @@
-import namingStandards from "../../../shared/naming-standards.json";
 import { joinWindowsPath, normalizeFileSystemPath, normalizeFileSystemPathList } from "../../app/utils/path";
+import {
+  getNamingStandardAllValuesSnapshot,
+  getNamingStandardSnapshot,
+  subscribeNamingStandard,
+} from "../../app/standard-config";
 import { matchesSearchToken, normalizeText, tokenizeText } from "../../app/utils/text";
 import type {
   ExtensionFilterGroup,
@@ -55,21 +59,26 @@ const PHASE_ALIASES: Record<string, string[]> = {
   PK: ["projekt koncepcyjny", "koncepcja"],
 };
 
-export const PHASE_OPTIONS = buildOptions(namingStandards.phases, PHASE_ALIASES);
-export const DISCIPLINE_OPTIONS = buildOptions(namingStandards.disciplines);
-export const DOCUMENT_TYPE_OPTIONS = buildOptions(namingStandards.documentTypes, DOCUMENT_TYPE_ALIASES);
-export const LEVEL_OPTIONS = buildOptions(namingStandards.levels, LEVEL_ALIASES);
-export const REVISION_PRESET_OPTIONS = [
-  { code: "R00", label: 'R00 - rewizja "zerowa" (domyślna)' },
-  { code: "W01", label: "W01 - pierwsza wersja koncepcji (domyślna)" },
-];
+let namingStandards = getNamingStandardSnapshot();
+let allNamingStandards = getNamingStandardAllValuesSnapshot();
+
+export let PHASE_OPTIONS = buildOptions(namingStandards.phases, PHASE_ALIASES);
+export let DISCIPLINE_OPTIONS = buildOptions(namingStandards.disciplines);
+export let DOCUMENT_TYPE_OPTIONS = buildOptions(namingStandards.documentTypes, DOCUMENT_TYPE_ALIASES);
+export let LEVEL_OPTIONS = buildOptions(namingStandards.levels, LEVEL_ALIASES);
+export let REVISION_PRESET_OPTIONS = buildRevisionPresetOptions();
 export const REVISION_CUSTOM_OPTION_LABEL = "wpisz numer rewizji";
 export const REVISION_INPUT_MESSAGE =
   "Wpisz rewizję w formacie R00-R99 albo W01-W99, np. R21 lub W03. Sam numer, np. 21, zapisze się jako R21.";
 export const REVISION_CONCEPT_MESSAGE =
   "Wersję koncepcji wpisz od W01 do W99. Dla rewizji zerowej użyj R00.";
-export const REVISION_OPTIONS = buildRevisionOptions();
-export const STATUS_OPTIONS = buildOptions(namingStandards.statuses);
+export let REVISION_OPTIONS = buildRevisionOptions();
+export let STATUS_OPTIONS = buildOptions(namingStandards.statuses);
+export let ALL_PHASE_OPTIONS = buildOptions(allNamingStandards.phases, PHASE_ALIASES);
+export let ALL_DISCIPLINE_OPTIONS = buildOptions(allNamingStandards.disciplines);
+export let ALL_DOCUMENT_TYPE_OPTIONS = buildOptions(allNamingStandards.documentTypes, DOCUMENT_TYPE_ALIASES);
+export let ALL_LEVEL_OPTIONS = buildOptions(allNamingStandards.levels, LEVEL_ALIASES);
+export let ALL_STATUS_OPTIONS = buildOptions(allNamingStandards.statuses);
 
 export const EXTENSION_FILTER_ICON_MAP: Record<
   ExtensionFilterGroup,
@@ -105,31 +114,67 @@ export function buildOptions(labels: Record<string, string>, aliases: Record<str
   }));
 }
 
+function buildRevisionPresetOptions() {
+  return [
+    {
+      code: "R00",
+      label: namingStandards.revisions.R00 ?? 'R00 - rewizja "zerowa" (domyślna)',
+    },
+    {
+      code: "W01",
+      label: namingStandards.revisions.W01 ?? "W01 - pierwsza wersja koncepcji (domyślna)",
+    },
+  ];
+}
+
 export function buildRevisionOptions(): NamingOption[] {
   const options: NamingOption[] = [];
 
   for (let index = 0; index <= 99; index += 1) {
     const code = `R${String(index).padStart(2, "0")}`;
     const preset = REVISION_PRESET_OPTIONS.find((option) => option.code === code);
+    const mappedLabel = namingStandards.revisions[code];
     options.push({
       code,
-      label: preset?.label ?? code,
-      searchTerms: [code, preset?.label ?? code],
+      label: mappedLabel ?? preset?.label ?? code,
+      searchTerms: [code, mappedLabel ?? preset?.label ?? code],
     });
   }
 
   for (let index = 1; index <= 99; index += 1) {
     const code = `W${String(index).padStart(2, "0")}`;
     const preset = REVISION_PRESET_OPTIONS.find((option) => option.code === code);
+    const mappedLabel = namingStandards.revisions[code];
     options.push({
       code,
-      label: preset?.label ?? code,
-      searchTerms: [code, preset?.label ?? code],
+      label: mappedLabel ?? preset?.label ?? code,
+      searchTerms: [code, mappedLabel ?? preset?.label ?? code],
     });
   }
 
   return options;
 }
+
+function refreshNamingStandardCaches() {
+  namingStandards = getNamingStandardSnapshot();
+  allNamingStandards = getNamingStandardAllValuesSnapshot();
+  PHASE_OPTIONS = buildOptions(namingStandards.phases, PHASE_ALIASES);
+  DISCIPLINE_OPTIONS = buildOptions(namingStandards.disciplines);
+  DOCUMENT_TYPE_OPTIONS = buildOptions(namingStandards.documentTypes, DOCUMENT_TYPE_ALIASES);
+  LEVEL_OPTIONS = buildOptions(namingStandards.levels, LEVEL_ALIASES);
+  REVISION_PRESET_OPTIONS = buildRevisionPresetOptions();
+  REVISION_OPTIONS = buildRevisionOptions();
+  STATUS_OPTIONS = buildOptions(namingStandards.statuses);
+  ALL_PHASE_OPTIONS = buildOptions(allNamingStandards.phases, PHASE_ALIASES);
+  ALL_DISCIPLINE_OPTIONS = buildOptions(allNamingStandards.disciplines);
+  ALL_DOCUMENT_TYPE_OPTIONS = buildOptions(allNamingStandards.documentTypes, DOCUMENT_TYPE_ALIASES);
+  ALL_LEVEL_OPTIONS = buildOptions(allNamingStandards.levels, LEVEL_ALIASES);
+  ALL_STATUS_OPTIONS = buildOptions(allNamingStandards.statuses);
+}
+
+subscribeNamingStandard(() => {
+  refreshNamingStandardCaches();
+});
 
 export function findOptionByCode(options: NamingOption[], code: string) {
   return options.find((option) => option.code === code) ?? null;
@@ -391,19 +436,19 @@ export function parseStandardizedFileName(fileName: string): ParsedStandardName 
     return null;
   }
 
-  if (!findOptionByCode(PHASE_OPTIONS, phase)) {
+  if (!findOptionByCode(ALL_PHASE_OPTIONS, phase)) {
     return null;
   }
 
-  if (!findOptionByCode(DISCIPLINE_OPTIONS, disciplineCode)) {
+  if (!findOptionByCode(ALL_DISCIPLINE_OPTIONS, disciplineCode)) {
     return null;
   }
 
-  if (!findOptionByCode(DOCUMENT_TYPE_OPTIONS, documentType)) {
+  if (!findOptionByCode(ALL_DOCUMENT_TYPE_OPTIONS, documentType)) {
     return null;
   }
 
-  if (!findOptionByCode(LEVEL_OPTIONS, level)) {
+  if (!findOptionByCode(ALL_LEVEL_OPTIONS, level)) {
     return null;
   }
 
@@ -411,7 +456,7 @@ export function parseStandardizedFileName(fileName: string): ParsedStandardName 
     return null;
   }
 
-  if (!isRevisionCodeValid(revision) || !findOptionByCode(STATUS_OPTIONS, status)) {
+  if (!isRevisionCodeValid(revision) || !findOptionByCode(ALL_STATUS_OPTIONS, status)) {
     return null;
   }
 

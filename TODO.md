@@ -66,6 +66,17 @@ Użytkownik ma móc:
 - Efekt:
   mniej niepewności, czy akcja dotyczy właściwego zestawu plików.
 
+### T-004a Dodać moduł Standard
+
+- Status: propozycja
+- Cel workflow: nowy użytkownik ma w jednym miejscu szybko zrozumieć strukturę nazwy, znaczenie segmentów i używane kody.
+- Problem:
+  wiedza o standardzie jest dziś rozproszona między Excelem, logiką aplikacji i samym doświadczeniem użytkownika.
+- Kierunek:
+  dodać moduł z prostą, interaktywną instrukcją standardu nazewnictwa, opartą o te same dane, których używają pozostałe moduły.
+- Efekt:
+  krótszy onboarding, mniej zgadywania i mniej błędów wynikających z nieznajomości skrótów.
+
 ## Następne
 
 ### T-005 Dodać workflow "wznów pracę"
@@ -101,6 +112,17 @@ Użytkownik ma móc:
   `ustal domyślne wartości -> zastosuj do zbioru -> pokaż odstępstwa -> popraw wyjątki`.
 - Efekt:
   większość pracy staje się seryjna i przewidywalna.
+
+### T-007a Przygotować migracje standardu i słowników
+
+- Status: propozycja
+- Cel workflow: zmiany w standardzie mają rozlewać się przewidywalnie na Filtr, Nazywanie i Odkodowanie bez ręcznego poprawiania każdego modułu osobno.
+- Problem:
+  aplikacja ma już wspólne słowniki kodów, ale część logiki i kolejności segmentów nadal jest zapisana lokalnie w różnych miejscach.
+- Kierunek:
+  rozdzielić lekkie zmiany słownikowe od zmian strukturalnych i przygotować mechanizm migracji dla standardu oraz powiązanych słowników.
+- Efekt:
+  rzadsze, ale większe zmiany w standardzie będą możliwe bez chaosu i bez ukrytych regresji między modułami.
 
 ### T-008 Ograniczyć "martwe przebiegi" po interfejsie
 

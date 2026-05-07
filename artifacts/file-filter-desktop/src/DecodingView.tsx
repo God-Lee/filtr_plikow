@@ -7,14 +7,15 @@ import type {
   DecodingTemplateSystemFieldKey,
   ParsedStandardName,
 } from "./app/types";
+import { useNamingStandardVersion } from "./app/standard-config";
 import { useTransientBanner } from "./app/useTransientBanner";
 import { fileFilterApi } from "./app/api";
 import {
-  DISCIPLINE_OPTIONS,
-  DOCUMENT_TYPE_OPTIONS,
-  LEVEL_OPTIONS,
-  PHASE_OPTIONS,
-  STATUS_OPTIONS,
+  ALL_DISCIPLINE_OPTIONS,
+  ALL_DOCUMENT_TYPE_OPTIONS,
+  ALL_LEVEL_OPTIONS,
+  ALL_PHASE_OPTIONS,
+  ALL_STATUS_OPTIONS,
   findOptionByCode,
   formatPolishCount,
   parseStandardizedFileName,
@@ -278,7 +279,7 @@ function getTypePhrase(documentType: string | undefined, dictionary: DecodingDic
     return direct;
   }
 
-  const option = findOptionByCode(DOCUMENT_TYPE_OPTIONS, documentType);
+  const option = findOptionByCode(ALL_DOCUMENT_TYPE_OPTIONS, documentType);
   return option ? stripCodePrefix(option.label).toLocaleLowerCase("pl") : documentType;
 }
 
@@ -300,7 +301,7 @@ function getLevelPhrase(level: string | undefined, dictionary: DecodingDictionar
     return direct;
   }
 
-  const option = findOptionByCode(LEVEL_OPTIONS, level);
+  const option = findOptionByCode(ALL_LEVEL_OPTIONS, level);
   return option ? stripCodePrefix(option.label).toLocaleLowerCase("pl") : level;
 }
 
@@ -314,7 +315,7 @@ function getDisciplinePhrase(code: string | undefined, dictionary: DecodingDicti
     return configured;
   }
 
-  const option = findOptionByCode(DISCIPLINE_OPTIONS, code);
+  const option = findOptionByCode(ALL_DISCIPLINE_OPTIONS, code);
   return option ? stripCodePrefix(option.label).toLocaleLowerCase("pl") : code;
 }
 
@@ -343,22 +344,22 @@ function buildRecognitionSummary(parsed: ParsedStandardName | null, dictionary: 
   const fragments = [
     parsed.projectNumber ? `Projekt ${parsed.projectNumber}` : "",
     parsed.phase
-      ? getDictionaryValue(dictionary, "phases", parsed.phase) ||
-        stripCodePrefix(findOptionByCode(PHASE_OPTIONS, parsed.phase)?.label ?? parsed.phase)
+        ? getDictionaryValue(dictionary, "phases", parsed.phase) ||
+        stripCodePrefix(findOptionByCode(ALL_PHASE_OPTIONS, parsed.phase)?.label ?? parsed.phase)
       : "",
     parsed.documentType
-      ? getDictionaryValue(dictionary, "documentTypes", parsed.documentType) ||
-        stripCodePrefix(findOptionByCode(DOCUMENT_TYPE_OPTIONS, parsed.documentType)?.label ?? parsed.documentType)
+        ? getDictionaryValue(dictionary, "documentTypes", parsed.documentType) ||
+        stripCodePrefix(findOptionByCode(ALL_DOCUMENT_TYPE_OPTIONS, parsed.documentType)?.label ?? parsed.documentType)
       : "",
     parsed.level
-      ? getDictionaryValue(dictionary, "levels", parsed.level) ||
-        stripCodePrefix(findOptionByCode(LEVEL_OPTIONS, parsed.level)?.label ?? parsed.level)
+        ? getDictionaryValue(dictionary, "levels", parsed.level) ||
+        stripCodePrefix(findOptionByCode(ALL_LEVEL_OPTIONS, parsed.level)?.label ?? parsed.level)
       : "",
     parsed.drawingNumber ? `nr ${parsed.drawingNumber}` : "",
     parsed.revision ? parsed.revision : "",
     parsed.status
-      ? getDictionaryValue(dictionary, "statuses", parsed.status) ||
-        stripCodePrefix(findOptionByCode(STATUS_OPTIONS, parsed.status)?.label ?? parsed.status)
+        ? getDictionaryValue(dictionary, "statuses", parsed.status) ||
+        stripCodePrefix(findOptionByCode(ALL_STATUS_OPTIONS, parsed.status)?.label ?? parsed.status)
       : "",
   ].filter(Boolean);
 
@@ -378,13 +379,13 @@ function buildBaseSuggestedName(
   const levelPhrase = getLevelPhrase(parsed?.level, dictionary);
   const phasePhrase = parsed?.phase
     ? getDictionaryValue(dictionary, "phases", parsed.phase) ||
-      stripCodePrefix(findOptionByCode(PHASE_OPTIONS, parsed.phase)?.label ?? parsed.phase)
+      stripCodePrefix(findOptionByCode(ALL_PHASE_OPTIONS, parsed.phase)?.label ?? parsed.phase)
     : "";
   const disciplinePhrase = getDisciplinePhrase(parsed?.disciplineCode, dictionary);
   const revisionPhrase = parsed?.revision || "";
   const statusPhrase = parsed?.status
     ? getDictionaryValue(dictionary, "statuses", parsed.status) ||
-      stripCodePrefix(findOptionByCode(STATUS_OPTIONS, parsed.status)?.label ?? parsed.status)
+      stripCodePrefix(findOptionByCode(ALL_STATUS_OPTIONS, parsed.status)?.label ?? parsed.status)
     : "";
 
   const partsByField: Record<DecodingTemplateSystemFieldKey, string> = {
@@ -500,23 +501,23 @@ function getDecodingFilterLabel(key: DecodingFilterKey, value: string) {
   }
 
   if (key === "phase") {
-    return stripCodePrefix(findOptionByCode(PHASE_OPTIONS, value)?.label ?? value);
+    return stripCodePrefix(findOptionByCode(ALL_PHASE_OPTIONS, value)?.label ?? value);
   }
 
   if (key === "disciplineCode") {
-    return stripCodePrefix(findOptionByCode(DISCIPLINE_OPTIONS, value)?.label ?? value);
+    return stripCodePrefix(findOptionByCode(ALL_DISCIPLINE_OPTIONS, value)?.label ?? value);
   }
 
   if (key === "documentType") {
-    return stripCodePrefix(findOptionByCode(DOCUMENT_TYPE_OPTIONS, value)?.label ?? value);
+    return stripCodePrefix(findOptionByCode(ALL_DOCUMENT_TYPE_OPTIONS, value)?.label ?? value);
   }
 
   if (key === "level") {
-    return stripCodePrefix(findOptionByCode(LEVEL_OPTIONS, value)?.label ?? value);
+    return stripCodePrefix(findOptionByCode(ALL_LEVEL_OPTIONS, value)?.label ?? value);
   }
 
   if (key === "status") {
-    return stripCodePrefix(findOptionByCode(STATUS_OPTIONS, value)?.label ?? value);
+    return stripCodePrefix(findOptionByCode(ALL_STATUS_OPTIONS, value)?.label ?? value);
   }
 
   return value;
@@ -646,6 +647,7 @@ export function DecodingView({
   onDictionaryPathChange,
   manageTemplatesRequestToken,
 }: DecodingViewProps) {
+  const namingStandardVersion = useNamingStandardVersion();
   const [sessionFiles, setSessionFiles] = useState<DecodeSourceFile[]>(initialFiles);
   const [dictionary, setDictionary] = useState<DecodingDictionary>(EMPTY_DICTIONARY);
   const [customTemplates, setCustomTemplates] = useState<DecodingTemplate[]>([]);
@@ -723,11 +725,11 @@ export function DecodingView({
     return () => onDictionaryPathChange("");
   }, [dictionary.path, onDictionaryPathChange]);
 
-  const rows = useMemo(() => buildRows(sessionFiles), [sessionFiles]);
+  const rows = useMemo(() => buildRows(sessionFiles), [namingStandardVersion, sessionFiles]);
   const rowsWithParsedData = useMemo(() => rows.filter((row) => row.parsed), [rows]);
   const suggestedNames = useMemo(
     () => makeUniqueNames(rows, manualNames, selectedTemplate, dictionary),
-    [dictionary, manualNames, rows, selectedTemplate],
+    [dictionary, manualNames, namingStandardVersion, rows, selectedTemplate],
   );
 
   const recognitionFilterOptions = useMemo(
@@ -751,7 +753,7 @@ export function DecodingView({
           return [group.key, deduped];
         }),
       ) as Record<DecodingFilterKey, DecodingFilterOption[]>,
-    [recognitionFilters, rowsWithParsedData],
+    [namingStandardVersion, recognitionFilters, rowsWithParsedData],
   );
 
   const evaluatedRows = useMemo(
@@ -770,7 +772,7 @@ export function DecodingView({
           canExport: Boolean(row.source.absolutePath && finalFileName),
         };
       }),
-    [dictionary, rows, suggestedNames],
+    [dictionary, namingStandardVersion, rows, suggestedNames],
   );
 
   const visibleRows = useMemo(

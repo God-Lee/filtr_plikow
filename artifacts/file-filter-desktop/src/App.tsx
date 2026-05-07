@@ -1,8 +1,14 @@
-import { Suspense, lazy, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import type { DecodeSourceFile } from "./app/types";
 import type { AppView } from "./app/types";
 import type { NamingHeroMenuState } from "./app/types";
-import { DecodingHeroMenu, FilterHeroMenu, NamingHeroMenu } from "./features/filter/components/FilterHeroMenu";
+import { loadRuntimeNamingStandard, useNamingStandardVersion } from "./app/standard-config";
+import {
+  DecodingHeroMenu,
+  FilterHeroMenu,
+  NamingHeroMenu,
+  StandardHeroMenu,
+} from "./features/filter/components/FilterHeroMenu";
 import { FilterView } from "./features/filter/FilterView";
 import { useFilterWorkspace } from "./features/filter/useFilterWorkspace";
 
@@ -14,6 +20,11 @@ const NamingView = lazy(async () => {
 const DecodingView = lazy(async () => {
   const module = await import("./DecodingView");
   return { default: module.DecodingView };
+});
+
+const StandardView = lazy(async () => {
+  const module = await import("./StandardView");
+  return { default: module.StandardView };
 });
 
 function EkoinbudLogo() {
@@ -105,7 +116,8 @@ function EkoinbudLogo() {
   );
 }
 
-export function App() {
+function AppReady() {
+  useNamingStandardVersion();
   const [activeView, setActiveView] = useState<AppView>("filter");
   const [decodeSeedFiles, setDecodeSeedFiles] = useState<DecodeSourceFile[]>([]);
   const [decodeSeedToken, setDecodeSeedToken] = useState(0);
@@ -114,6 +126,7 @@ export function App() {
   const [openDecodingTemplateManagerToken, setOpenDecodingTemplateManagerToken] = useState(0);
   const [refreshNamingWorkingFolderToken, setRefreshNamingWorkingFolderToken] = useState(0);
   const [undoNamingOperationToken, setUndoNamingOperationToken] = useState(0);
+  const [standardAdminMode, setStandardAdminMode] = useState(false);
   const [namingHeroMenuState, setNamingHeroMenuState] = useState<NamingHeroMenuState>({
     canRefreshWorkingFolder: false,
     refreshWorkingFolderLabel: "Odśwież folder roboczy",
@@ -129,13 +142,15 @@ export function App() {
     setActiveView("decoding");
   }
 
+  const hasHeroMenu = true;
+
   return (
     <div className="app-shell">
       <header className="hero-bar">
         <div className="hero-brand">
           <div className="hero-brand-copy">
             <div className="hero-brand-header">
-              <div className="hero-menu-slot" aria-hidden={activeView !== "filter"}>
+              <div className="hero-menu-slot" aria-hidden={!hasHeroMenu}>
                 {activeView === "filter" ? (
                   <FilterHeroMenu
                     canExportReport={Boolean(workspace.scanResult && (workspace.scanResult.invalidCount ?? 0) > 0 && !workspace.exportingInvalidReport)}
@@ -157,6 +172,11 @@ export function App() {
                     canUndoLastOperation={namingHeroMenuState.canUndoLastOperation}
                     onRefreshWorkingFolder={() => setRefreshNamingWorkingFolderToken((current) => current + 1)}
                     onUndoLastOperation={() => setUndoNamingOperationToken((current) => current + 1)}
+                  />
+                ) : activeView === "standard" ? (
+                  <StandardHeroMenu
+                    isAdminMode={standardAdminMode}
+                    onToggleAdminMode={() => setStandardAdminMode((current) => !current)}
                   />
                 ) : null}
               </div>
@@ -191,19 +211,25 @@ export function App() {
             className={`secondary-button ${activeView === "filter" ? "active" : ""}`}
             onClick={() => setActiveView("filter")}
           >
-            Filtr
+            Filtruj
           </button>
           <button
             className={`secondary-button ${activeView === "naming" ? "active" : ""}`}
             onClick={() => setActiveView("naming")}
           >
-            Nazywanie
+            Nazwij
           </button>
           <button
             className={`secondary-button ${activeView === "decoding" ? "active" : ""}`}
             onClick={() => setActiveView("decoding")}
           >
-            Odkodowanie
+            Odkoduj
+          </button>
+          <button
+            className={`secondary-button ${activeView === "standard" ? "active" : ""}`}
+            onClick={() => setActiveView("standard")}
+          >
+            Standard
           </button>
         </div>
       </header>
@@ -229,7 +255,7 @@ export function App() {
               onHeroMenuStateChange={setNamingHeroMenuState}
             />
           </Suspense>
-        ) : (
+        ) : activeView === "decoding" ? (
           <Suspense
             fallback={
               <div className="empty-state empty-state-compact">
@@ -245,8 +271,50 @@ export function App() {
               manageTemplatesRequestToken={openDecodingTemplateManagerToken}
             />
           </Suspense>
+        ) : (
+          <Suspense
+            fallback={
+              <div className="empty-state empty-state-compact">
+                <h3>Ładowanie widoku standardu...</h3>
+              </div>
+            }
+          >
+            <StandardView isAdminMode={standardAdminMode} />
+          </Suspense>
         )}
       </div>
     </div>
   );
+}
+
+export function App() {
+  const [standardReady, setStandardReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void loadRuntimeNamingStandard()
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) {
+          setStandardReady(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!standardReady) {
+    return (
+      <div className="app-shell">
+        <div className="empty-state empty-state-compact">
+          <h3>Ładowanie standardu...</h3>
+        </div>
+      </div>
+    );
+  }
+
+  return <AppReady />;
 }

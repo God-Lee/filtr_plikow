@@ -4,6 +4,7 @@ const { loadDecodingDictionary } = require("./decoding-config.cjs");
 const { listProjects, scanProject } = require("./projects.cjs");
 const { chooseDirectory, exportInvalidFilesReport } = require("./report.cjs");
 const { loadSettings, saveSettings } = require("./settings.cjs");
+const { loadNamingStandard, saveNamingStandard } = require("./standard-config.cjs");
 
 async function chooseProjectsRoot() {
   const selected = await dialog.showOpenDialog({
@@ -26,6 +27,8 @@ async function chooseProjectsRoot() {
 
 function registerIpcHandlers() {
   ipcMain.handle("settings:get", async () => loadSettings());
+  ipcMain.handle("standard:get", async () => loadNamingStandard());
+  ipcMain.handle("standard:save", async (_event, values) => saveNamingStandard(values));
   ipcMain.handle("settings:chooseRoot", async () => chooseProjectsRoot());
   ipcMain.handle("settings:updateFavorites", async (_event, favoriteProjects) => {
     const currentSettings = await loadSettings();

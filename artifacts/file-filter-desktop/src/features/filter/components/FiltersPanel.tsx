@@ -8,6 +8,8 @@ type FiltersPanelProps = {
   filters: Record<string, string[]>;
   invalidCount: number;
   invalidCountTooltip: string;
+  onSearchQueryChange: (value: string) => void;
+  searchQuery: string;
   setExpandedGroups: (updater: Record<string, boolean> | ((current: Record<string, boolean>) => Record<string, boolean>)) => void;
   showInvalidOnly: boolean;
   totalFiles: number;
@@ -28,6 +30,8 @@ export function FiltersPanel({
   filters,
   invalidCount,
   invalidCountTooltip,
+  onSearchQueryChange,
+  searchQuery,
   setExpandedGroups,
   showInvalidOnly,
   totalFiles,
@@ -86,6 +90,15 @@ export function FiltersPanel({
           Resetuj
         </button>
       </div>
+
+      <label className="field filters-search-field">
+        <span>Szukaj</span>
+        <input
+          value={searchQuery}
+          onChange={(event) => onSearchQueryChange(event.target.value)}
+          placeholder="Nazwa pliku, kod, opis, ścieżka..."
+        />
+      </label>
 
       <div className="filters-panel-scroll">
         <div className="filter-groups">

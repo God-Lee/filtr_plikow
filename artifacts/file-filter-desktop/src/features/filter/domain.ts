@@ -1,15 +1,19 @@
-import namingStandards from "../../../shared/naming-standards.json";
 import type {
   FavoriteProjectCard,
+  DateFilterKey,
+  DateFilterValue,
   FileRecord,
+  FilterColumnKey,
   FilterGroup,
   SortConfig,
   SortKey,
 } from "../../app/types";
+import { getNamingStandardSnapshot, subscribeNamingStandard } from "../../app/standard-config";
 import { getFilteredFileCountLabel, getGenericFileCountLabel } from "../../app/utils/polish";
 import { matchesSearchToken, normalizeText, tokenizeText } from "../../app/utils/text";
 
 type FilterOptionMap = Record<string, string[]>;
+export type DateFilterMap = Record<DateFilterKey, DateFilterValue | null>;
 
 export const MAX_FAVORITE_PROJECTS = 10;
 
@@ -26,16 +30,20 @@ const EXTENSION_GROUP_LABELS: Record<string, string> = {
   ".xlsx": "Excel",
 };
 
-const PHASE_LABELS: Record<string, string> = namingStandards.phases;
-const DISCIPLINE_LABELS: Record<string, string> = namingStandards.disciplines;
-const DOCUMENT_TYPE_LABELS: Record<string, string> = namingStandards.documentTypes;
-const LEVEL_LABELS: Record<string, string> = namingStandards.levels;
-const REVISION_LABELS: Record<string, string> = buildRevisionLabels();
-const STATUS_LABELS: Record<string, string> = namingStandards.statuses;
+let namingStandards = getNamingStandardSnapshot();
+
+let PHASE_LABELS: Record<string, string> = namingStandards.phases;
+let DISCIPLINE_LABELS: Record<string, string> = namingStandards.disciplines;
+let DOCUMENT_TYPE_LABELS: Record<string, string> = namingStandards.documentTypes;
+let LEVEL_LABELS: Record<string, string> = namingStandards.levels;
+let REVISION_LABELS: Record<string, string> = buildRevisionLabels();
+let STATUS_LABELS: Record<string, string> = namingStandards.statuses;
 
 export const SORTABLE_COLUMNS: Array<{ key: SortKey; label: string; className?: string }> = [
   { key: "fileName", label: "Plik", className: "column-file" },
   { key: "isValid", label: "Poprawność", className: "column-status" },
+  { key: "createdAt", label: "Utworzono", className: "column-date" },
+  { key: "modifiedAt", label: "Zmodyfikowano", className: "column-date" },
   { key: "phase", label: "Faza" },
   { key: "disciplineCode", label: "Branża" },
   { key: "documentType", label: "Typ" },
@@ -44,6 +52,8 @@ export const SORTABLE_COLUMNS: Array<{ key: SortKey; label: string; className?: 
   { key: "revision", label: "Rewizja" },
   { key: "status", label: "Status" },
 ];
+
+export const DEFAULT_VISIBLE_COLUMN_KEYS = SORTABLE_COLUMNS.map((column) => column.key);
 
 export const FILTER_GROUPS: FilterGroup<FileRecord>[] = [
   { key: "extensionLabel", label: "Typ plików", getValue: (file) => getExtensionFilterLabel(file) },
@@ -81,12 +91,30 @@ export function getValidationLabel(file: FileRecord) {
   return file.invalidReason === "Błędna lokalizacja" ? "Błędna lokalizacja" : "Błędna nazwa";
 }
 
+export function sanitizeVisibleColumnKeys(columnKeys: unknown): FilterColumnKey[] {
+  if (!Array.isArray(columnKeys)) {
+    return DEFAULT_VISIBLE_COLUMN_KEYS;
+  }
+
+  const allowedColumnKeys = new Set<SortKey>(SORTABLE_COLUMNS.map((column) => column.key));
+  const visibleColumnKeys = columnKeys.filter(
+    (columnKey): columnKey is FilterColumnKey =>
+      typeof columnKey === "string" && allowedColumnKeys.has(columnKey as SortKey),
+  );
+
+  return visibleColumnKeys.length > 0 ? Array.from(new Set(visibleColumnKeys)) : DEFAULT_VISIBLE_COLUMN_KEYS;
+}
+
 export function getSortValue(file: FileRecord, sortKey: SortKey) {
   switch (sortKey) {
     case "fileName":
       return file.fileName;
     case "isValid":
       return getValidationLabel(file);
+    case "createdAt":
+      return file.createdAt ?? "";
+    case "modifiedAt":
+      return file.modifiedAt ?? "";
     case "phase":
       return file.parsedSegments?.phase ?? "";
     case "disciplineCode":
@@ -111,11 +139,13 @@ export function getActiveFilterCount(
   showInvalidOnly: boolean,
   showValidOnly: boolean,
   showSelectedOnly: boolean,
+  dateFilters: DateFilterMap,
 ) {
   return (
     Object.values(filters).reduce((sum, values) => sum + values.length, 0) +
     (showInvalidOnly || showValidOnly ? 1 : 0) +
-    (showSelectedOnly ? 1 : 0)
+    (showSelectedOnly ? 1 : 0) +
+    Object.values(dateFilters).filter(Boolean).length
   );
 }
 
@@ -216,11 +246,13 @@ export function getFilteredFiles(
   filters: FilterOptionMap,
   showInvalidOnly: boolean,
   showValidOnly: boolean,
+  dateFilters: DateFilterMap,
 ) {
   return files.filter(
     (file) =>
       matchesSelectedFilters(file, filters, FILTER_GROUPS) &&
-      matchesValidityCriteria(file, showInvalidOnly, showValidOnly),
+      matchesValidityCriteria(file, showInvalidOnly, showValidOnly) &&
+      matchesDateFilters(file, dateFilters),
   );
 }
 
@@ -272,10 +304,7 @@ export function getFilteredFileSummaryLabel(count: number) {
 }
 
 function buildRevisionLabels() {
-  const labels: Record<string, string> = {
-    R00: 'R00 - rewizja "zerowa" (domyślna)',
-    W01: "W01 - pierwsza wersja koncepcji (domyślna)",
-  };
+  const labels: Record<string, string> = { ...namingStandards.revisions };
 
   for (let index = 0; index <= 99; index += 1) {
     const code = `R${String(index).padStart(2, "0")}`;
@@ -289,6 +318,20 @@ function buildRevisionLabels() {
 
   return labels;
 }
+
+function refreshNamingStandardLabels() {
+  namingStandards = getNamingStandardSnapshot();
+  PHASE_LABELS = namingStandards.phases;
+  DISCIPLINE_LABELS = namingStandards.disciplines;
+  DOCUMENT_TYPE_LABELS = namingStandards.documentTypes;
+  LEVEL_LABELS = namingStandards.levels;
+  REVISION_LABELS = buildRevisionLabels();
+  STATUS_LABELS = namingStandards.statuses;
+}
+
+subscribeNamingStandard(() => {
+  refreshNamingStandardLabels();
+});
 
 function getMappedFilterLabel(value: string | null | undefined, labels: Record<string, string>) {
   if (!value) {
@@ -389,6 +432,47 @@ function matchesValidityCriteria(file: FileRecord, showInvalidOnly: boolean, sho
 
   if (showValidOnly && !file.isValid) {
     return false;
+  }
+
+  return true;
+}
+
+function getDateOnlyStart(dateValue: string) {
+  if (!dateValue) {
+    return null;
+  }
+
+  const date = new Date(`${dateValue}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getDateOnlyEnd(dateValue: string) {
+  const date = getDateOnlyStart(dateValue);
+  if (!date) {
+    return null;
+  }
+
+  date.setDate(date.getDate() + 1);
+  return date;
+}
+
+function matchesDateFilters(file: FileRecord, dateFilters: DateFilterMap) {
+  for (const [dateKey, filter] of Object.entries(dateFilters) as Array<[DateFilterKey, DateFilterValue | null]>) {
+    if (!filter) {
+      continue;
+    }
+
+    const fileDate = new Date(file[dateKey] ?? "");
+    const fromDate = getDateOnlyStart(filter.from);
+    const toDate = getDateOnlyEnd(filter.to);
+
+    if (Number.isNaN(fileDate.getTime()) || !fromDate || !toDate) {
+      return false;
+    }
+
+    if (fileDate < fromDate || fileDate >= toDate) {
+      return false;
+    }
   }
 
   return true;

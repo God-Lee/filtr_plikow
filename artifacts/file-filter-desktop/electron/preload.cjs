@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("fileFilterApi", {
   getSettings: () => ipcRenderer.invoke("settings:get"),
+  getNamingStandard: () => ipcRenderer.invoke("standard:get"),
+  saveNamingStandard: (values) => ipcRenderer.invoke("standard:save", values),
   chooseProjectsRoot: () => ipcRenderer.invoke("settings:chooseRoot"),
   updateFavoriteProjects: (favoriteProjects) => ipcRenderer.invoke("settings:updateFavorites", favoriteProjects),
   updateNamingViewDraft: (namingViewDraft) => ipcRenderer.invoke("settings:updateNamingViewDraft", namingViewDraft),

@@ -1,4 +1,39 @@
-export type AppView = "filter" | "naming" | "decoding";
+export type AppView = "filter" | "naming" | "decoding" | "standard";
+
+export type NamingStandardEntry = {
+  label: string;
+  active: boolean;
+};
+
+export type NamingStandardEditableSection = Record<string, NamingStandardEntry>;
+
+export type NamingStandardRuntimeValues = {
+  phases: Record<string, string>;
+  disciplines: Record<string, string>;
+  documentTypes: Record<string, string>;
+  levels: Record<string, string>;
+  revisions: Record<string, string>;
+  statuses: Record<string, string>;
+};
+
+export type NamingStandardsData = {
+  phases: NamingStandardEditableSection;
+  disciplines: NamingStandardEditableSection;
+  documentTypes: NamingStandardEditableSection;
+  levels: NamingStandardEditableSection;
+  revisions: Record<string, string>;
+  statuses: NamingStandardEditableSection;
+};
+
+export type NamingStandardConfig = {
+  path: string;
+  backupsPath: string;
+  lastReportPath: string;
+  source: "bundled" | "userData";
+  values: NamingStandardsData;
+  activeValues: NamingStandardRuntimeValues;
+  allValues: NamingStandardRuntimeValues;
+};
 
 export type NoticeTone = "error" | "muted" | "success";
 
@@ -82,6 +117,8 @@ export type FileRecord = {
   fileName: string;
   absolutePath: string;
   folderPath: string;
+  createdAt: string;
+  modifiedAt: string;
   projectName: string;
   projectNumber: string;
   sourceKey: "EDT" | "PDF";
@@ -143,6 +180,8 @@ export type SortDirection = "asc" | "desc";
 export type SortKey =
   | "fileName"
   | "isValid"
+  | "createdAt"
+  | "modifiedAt"
   | "phase"
   | "disciplineCode"
   | "documentType"
@@ -154,6 +193,18 @@ export type SortKey =
 export type SortConfig = {
   key: SortKey;
   direction: SortDirection;
+};
+
+export type FilterColumnKey = SortKey;
+
+export type DateFilterKey = "createdAt" | "modifiedAt";
+
+export type DateFilterPreset = "today" | "week" | "month" | "custom";
+
+export type DateFilterValue = {
+  preset: DateFilterPreset;
+  from: string;
+  to: string;
 };
 
 export type FavoriteProjectCard = {
@@ -268,6 +319,8 @@ export type ExportInvalidFilesReportResult = {
 
 export interface FileFilterApi {
   getSettings: () => Promise<AppSettings>;
+  getNamingStandard: () => Promise<NamingStandardConfig>;
+  saveNamingStandard: (values: NamingStandardsData) => Promise<NamingStandardConfig>;
   chooseProjectsRoot: () => Promise<AppSettings>;
   updateFavoriteProjects: (favoriteProjects: string[]) => Promise<AppSettings>;
   updateNamingViewDraft: (namingViewDraft: NamingViewDraft) => Promise<AppSettings>;

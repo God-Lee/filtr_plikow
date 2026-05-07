@@ -8,7 +8,11 @@ import {
   useState,
 } from "react";
 import type { NamingHeroMenuState } from "./app/types";
-import namingStandards from "../shared/naming-standards.json";
+import {
+  getNamingStandardSnapshot,
+  subscribeNamingStandard,
+  useNamingStandardVersion,
+} from "./app/standard-config";
 import pdfIcon from "./assets/extension-icons/pdf.svg";
 import wordIcon from "./assets/extension-icons/word.svg";
 import excelIcon from "./assets/extension-icons/excel.svg";
@@ -223,21 +227,35 @@ function buildOptions(labels: Record<string, string>, aliases: Record<string, st
   }));
 }
 
-const PHASE_OPTIONS = buildOptions(namingStandards.phases, PHASE_ALIASES);
-const DISCIPLINE_OPTIONS = buildOptions(namingStandards.disciplines);
-const DOCUMENT_TYPE_OPTIONS = buildOptions(namingStandards.documentTypes, DOCUMENT_TYPE_ALIASES);
-const LEVEL_OPTIONS = buildOptions(namingStandards.levels, LEVEL_ALIASES);
-const REVISION_PRESET_OPTIONS = [
-  { code: "R00", label: 'R00 - rewizja "zerowa" (domyślna)' },
-  { code: "W01", label: "W01 - pierwsza wersja koncepcji (domyślna)" },
-];
+let namingStandards = getNamingStandardSnapshot();
+
+let PHASE_OPTIONS = buildOptions(namingStandards.phases, PHASE_ALIASES);
+let DISCIPLINE_OPTIONS = buildOptions(namingStandards.disciplines);
+let DOCUMENT_TYPE_OPTIONS = buildOptions(namingStandards.documentTypes, DOCUMENT_TYPE_ALIASES);
+let LEVEL_OPTIONS = buildOptions(namingStandards.levels, LEVEL_ALIASES);
+let REVISION_PRESET_OPTIONS = buildRevisionPresetOptions();
 const REVISION_CUSTOM_OPTION_LABEL = "wpisz numer rewizji";
 const REVISION_INPUT_MESSAGE =
   "Wpisz rewizję w formacie R00-R99 albo W01-W99, np. R21 lub W03. Sam numer, np. 21, zapisze się jako R21.";
 const REVISION_CONCEPT_MESSAGE = "Wersję koncepcji wpisz od W01 do W99. Dla rewizji zerowej użyj R00.";
 const BULK_STATUS_INPUT_MESSAGE = "Wpisz poprawny status: S0, S1, S2 lub A1.";
-const REVISION_OPTIONS = buildRevisionOptions();
-const STATUS_OPTIONS = buildOptions(namingStandards.statuses);
+let REVISION_OPTIONS = buildRevisionOptions();
+let STATUS_OPTIONS = buildOptions(namingStandards.statuses);
+
+function buildRevisionPresetOptions(): NamingOption[] {
+  return [
+    {
+      code: "R00",
+      label: namingStandards.revisions.R00 ?? 'R00 - rewizja "zerowa" (domyślna)',
+      searchTerms: ["R00", namingStandards.revisions.R00 ?? 'R00 - rewizja "zerowa" (domyślna)'],
+    },
+    {
+      code: "W01",
+      label: namingStandards.revisions.W01 ?? "W01 - pierwsza wersja koncepcji (domyślna)",
+      searchTerms: ["W01", namingStandards.revisions.W01 ?? "W01 - pierwsza wersja koncepcji (domyślna)"],
+    },
+  ];
+}
 
 function buildRevisionOptions(): NamingOption[] {
   const options: NamingOption[] = [];
@@ -245,25 +263,42 @@ function buildRevisionOptions(): NamingOption[] {
   for (let index = 0; index <= 99; index += 1) {
     const code = `R${String(index).padStart(2, "0")}`;
     const preset = REVISION_PRESET_OPTIONS.find((option) => option.code === code);
+    const mappedLabel = namingStandards.revisions[code];
     options.push({
       code,
-      label: preset?.label ?? code,
-      searchTerms: [code, preset?.label ?? code],
+      label: mappedLabel ?? preset?.label ?? code,
+      searchTerms: [code, mappedLabel ?? preset?.label ?? code],
     });
   }
 
   for (let index = 1; index <= 99; index += 1) {
     const code = `W${String(index).padStart(2, "0")}`;
     const preset = REVISION_PRESET_OPTIONS.find((option) => option.code === code);
+    const mappedLabel = namingStandards.revisions[code];
     options.push({
       code,
-      label: preset?.label ?? code,
-      searchTerms: [code, preset?.label ?? code],
+      label: mappedLabel ?? preset?.label ?? code,
+      searchTerms: [code, mappedLabel ?? preset?.label ?? code],
     });
   }
 
   return options;
 }
+
+function refreshNamingStandardCaches() {
+  namingStandards = getNamingStandardSnapshot();
+  PHASE_OPTIONS = buildOptions(namingStandards.phases, PHASE_ALIASES);
+  DISCIPLINE_OPTIONS = buildOptions(namingStandards.disciplines);
+  DOCUMENT_TYPE_OPTIONS = buildOptions(namingStandards.documentTypes, DOCUMENT_TYPE_ALIASES);
+  LEVEL_OPTIONS = buildOptions(namingStandards.levels, LEVEL_ALIASES);
+  REVISION_PRESET_OPTIONS = buildRevisionPresetOptions();
+  REVISION_OPTIONS = buildRevisionOptions();
+  STATUS_OPTIONS = buildOptions(namingStandards.statuses);
+}
+
+subscribeNamingStandard(() => {
+  refreshNamingStandardCaches();
+});
 
 function findOptionByCode(options: NamingOption[], code: string) {
   return options.find((option) => option.code === code) ?? null;
@@ -766,6 +801,7 @@ export function NamingView({
   undoLastOperationRequestToken,
   onHeroMenuStateChange,
 }: NamingViewProps) {
+  const namingStandardVersion = useNamingStandardVersion();
   const initialDraftRef = useRef<NamingViewDraft | null>(null);
   const defaultRevisionInputRef = useRef<HTMLInputElement | null>(null);
   const handledRefreshRequestTokenRef = useRef(0);
@@ -829,12 +865,18 @@ export function NamingView({
   const [highlightedPhaseIndex, setHighlightedPhaseIndex] = useState(-1);
   const [highlightedDisciplineIndex, setHighlightedDisciplineIndex] = useState(-1);
 
-  const phaseMatch = useMemo(() => resolveOption(phaseInput, PHASE_OPTIONS), [phaseInput]);
-  const disciplineMatch = useMemo(() => resolveOption(disciplineInput, DISCIPLINE_OPTIONS), [disciplineInput]);
-  const phaseSuggestions = useMemo(() => getSuggestedOptions(phaseInput, PHASE_OPTIONS), [phaseInput]);
+  const phaseMatch = useMemo(() => resolveOption(phaseInput, PHASE_OPTIONS), [namingStandardVersion, phaseInput]);
+  const disciplineMatch = useMemo(
+    () => resolveOption(disciplineInput, DISCIPLINE_OPTIONS),
+    [disciplineInput, namingStandardVersion],
+  );
+  const phaseSuggestions = useMemo(
+    () => getSuggestedOptions(phaseInput, PHASE_OPTIONS),
+    [namingStandardVersion, phaseInput],
+  );
   const disciplineSuggestions = useMemo(
     () => getSuggestedOptions(disciplineInput, DISCIPLINE_OPTIONS),
-    [disciplineInput],
+    [disciplineInput, namingStandardVersion],
   );
 
   const resolvedSession = useMemo<ResolvedSession | null>(() => {
@@ -1739,7 +1781,7 @@ export function NamingView({
     });
 
     return { keys, identityKeys };
-  }, [targetFiles]);
+  }, [namingStandardVersion, targetFiles]);
 
   const copiedTargetPathSet = useMemo(() => new Set(copiedTargetPaths), [copiedTargetPaths]);
 
@@ -1900,6 +1942,7 @@ export function NamingView({
   }, [
     copiedTargetPathSet,
     disciplineMatch,
+    namingStandardVersion,
     phaseMatch,
     projectNumber,
     resolvedSession,
@@ -2017,7 +2060,7 @@ export function NamingView({
     }
 
     return { fileName, parsed };
-  }, [customNameDialogRow, customNameInput, resolvedSession]);
+  }, [customNameDialogRow, customNameInput, namingStandardVersion, resolvedSession]);
 
   function assignNextDrawingNumber(rowId: string) {
     if (!resolvedSession) {

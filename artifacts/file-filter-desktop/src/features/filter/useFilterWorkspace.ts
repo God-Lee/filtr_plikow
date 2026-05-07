@@ -7,9 +7,20 @@ import {
   useState,
 } from "react";
 import { fileFilterApi } from "../../app/api";
+import { useNamingStandardVersion } from "../../app/standard-config";
 import { useTransientBanner } from "../../app/useTransientBanner";
-import type { DecodeSourceFile, NoticeTone, ScanResult, SortConfig, SortKey } from "../../app/types";
+import type {
+  DateFilterKey,
+  DateFilterValue,
+  DecodeSourceFile,
+  FilterColumnKey,
+  NoticeTone,
+  ScanResult,
+  SortConfig,
+  SortKey,
+} from "../../app/types";
 import {
+  DEFAULT_VISIBLE_COLUMN_KEYS,
   INITIAL_EXPANDED_GROUPS,
   INITIAL_FILTERS,
   MAX_FAVORITE_PROJECTS,
@@ -25,12 +36,29 @@ import {
   getSortedFiles,
   getVisibleFavoriteProjects,
   getVisibleFilterGroups,
+  type DateFilterMap,
+  sanitizeVisibleColumnKeys,
   sanitizeSelectedFilters,
 } from "./domain";
 
 type FilterOptionMap = Record<string, string[]>;
+const VISIBLE_FILTER_COLUMNS_STORAGE_KEY = "file-filter.visibleColumnKeys";
+const INITIAL_DATE_FILTERS: DateFilterMap = {
+  createdAt: null,
+  modifiedAt: null,
+};
+
+function getInitialVisibleColumnKeys() {
+  try {
+    const rawValue = window.localStorage.getItem(VISIBLE_FILTER_COLUMNS_STORAGE_KEY);
+    return rawValue ? sanitizeVisibleColumnKeys(JSON.parse(rawValue)) : DEFAULT_VISIBLE_COLUMN_KEYS;
+  } catch {
+    return DEFAULT_VISIBLE_COLUMN_KEYS;
+  }
+}
 
 export function useFilterWorkspace() {
+  const namingStandardVersion = useNamingStandardVersion();
   const [projectsRoot, setProjectsRoot] = useState("");
   const [projects, setProjects] = useState<string[]>([]);
   const [favoriteProjects, setFavoriteProjects] = useState<string[]>([]);
@@ -50,8 +78,10 @@ export function useFilterWorkspace() {
   const [showValidOnly, setShowValidOnly] = useState(false);
   const [showSelectedOnly, setShowSelectedOnly] = useState(false);
   const [filters, setFilters] = useState<FilterOptionMap>(INITIAL_FILTERS);
+  const [dateFilters, setDateFilters] = useState<DateFilterMap>(INITIAL_DATE_FILTERS);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(INITIAL_EXPANDED_GROUPS);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "fileName", direction: "asc" });
+  const [visibleColumnKeys, setVisibleColumnKeys] = useState<FilterColumnKey[]>(getInitialVisibleColumnKeys);
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
   const projectPickerRef = useRef<HTMLDivElement | null>(null);
   const projectOptionRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -99,17 +129,33 @@ export function useFilterWorkspace() {
     void refreshProjects();
   }, []);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(VISIBLE_FILTER_COLUMNS_STORAGE_KEY, JSON.stringify(visibleColumnKeys));
+    } catch {
+      // Widoczność kolumn nadal działa w bieżącej sesji.
+    }
+  }, [visibleColumnKeys]);
+
+  useEffect(() => {
+    if (visibleColumnKeys.includes(sortConfig.key)) {
+      return;
+    }
+
+    setSortConfig({ key: visibleColumnKeys[0] ?? "fileName", direction: "asc" });
+  }, [sortConfig.key, visibleColumnKeys]);
+
   const shouldHideExtensionFilter = getShouldHideExtensionFilter(filters);
   const shouldRemovePdfExtensionOption = getShouldRemovePdfExtensionOption(filters);
 
   const baseMatchingFiles = useMemo(
     () => filterFilesBySearch(scanResult?.files ?? [], deferredSearchQuery),
-    [deferredSearchQuery, scanResult?.files],
+    [deferredSearchQuery, namingStandardVersion, scanResult?.files],
   );
 
   const filterOptions = useMemo(
     () => getFilterOptions(baseMatchingFiles, filters, shouldRemovePdfExtensionOption),
-    [baseMatchingFiles, filters, shouldRemovePdfExtensionOption],
+    [baseMatchingFiles, filters, namingStandardVersion, shouldRemovePdfExtensionOption],
   );
 
   const visibleFilterGroups = useMemo(
@@ -129,19 +175,17 @@ export function useFilterWorkspace() {
 
   const selectedFileIdSet = useMemo(() => new Set(selectedFileIds), [selectedFileIds]);
 
-  const selectedFileRecords = useMemo(
-    () => (scanResult?.files ?? []).filter((file) => selectedFileIdSet.has(file.id)),
-    [scanResult?.files, selectedFileIdSet],
-  );
-
   const filesMatchingActiveFilters = useMemo(
-    () => getFilteredFiles(baseMatchingFiles, filters, showInvalidOnly, showValidOnly),
-    [baseMatchingFiles, filters, showInvalidOnly, showValidOnly],
+    () => getFilteredFiles(baseMatchingFiles, filters, showInvalidOnly, showValidOnly, dateFilters),
+    [baseMatchingFiles, dateFilters, filters, showInvalidOnly, showValidOnly],
   );
 
   const filteredFiles = useMemo(
-    () => (showSelectedOnly ? selectedFileRecords : filesMatchingActiveFilters),
-    [filesMatchingActiveFilters, selectedFileRecords, showSelectedOnly],
+    () =>
+      showSelectedOnly
+        ? filesMatchingActiveFilters.filter((file) => selectedFileIdSet.has(file.id))
+        : filesMatchingActiveFilters,
+    [filesMatchingActiveFilters, selectedFileIdSet, showSelectedOnly],
   );
   const sortedFiles = useMemo(() => getSortedFiles(filteredFiles, sortConfig), [filteredFiles, sortConfig]);
   const filteredValidCount = useMemo(
@@ -237,6 +281,7 @@ export function useFilterWorkspace() {
     setScanResult(null);
     setFilters(INITIAL_FILTERS);
     setExpandedGroups(INITIAL_EXPANDED_GROUPS);
+    setDateFilters(INITIAL_DATE_FILTERS);
     setProjectQuery("");
     setProjectPickerOpen(false);
     setHighlightedProjectIndex(-1);
@@ -260,6 +305,7 @@ export function useFilterWorkspace() {
         setScanResult(result);
         setFilters(INITIAL_FILTERS);
         setExpandedGroups(INITIAL_EXPANDED_GROUPS);
+        setDateFilters(INITIAL_DATE_FILTERS);
         setSearchQuery("");
         setShowInvalidOnly(false);
         setShowValidOnly(false);
@@ -374,6 +420,7 @@ export function useFilterWorkspace() {
     dismissReportMessage();
     setFilters(INITIAL_FILTERS);
     setExpandedGroups(INITIAL_EXPANDED_GROUPS);
+    setDateFilters(INITIAL_DATE_FILTERS);
     setSearchQuery("");
     setShowInvalidOnly(false);
     setShowValidOnly(false);
@@ -418,7 +465,32 @@ export function useFilterWorkspace() {
     });
   }
 
-  const activeFilterCount = getActiveFilterCount(filters, showInvalidOnly, showValidOnly, showSelectedOnly);
+  function toggleColumnVisibility(columnKey: FilterColumnKey) {
+    dismissReportMessage();
+    setVisibleColumnKeys((current) => {
+      if (current.includes(columnKey)) {
+        return current.length > 1 ? current.filter((key) => key !== columnKey) : current;
+      }
+
+      return [...current, columnKey];
+    });
+  }
+
+  function setDateFilter(dateKey: DateFilterKey, filter: DateFilterValue | null) {
+    dismissReportMessage();
+    setDateFilters((current) => ({
+      ...current,
+      [dateKey]: filter,
+    }));
+  }
+
+  const activeFilterCount = getActiveFilterCount(
+    filters,
+    showInvalidOnly,
+    showValidOnly,
+    showSelectedOnly,
+    dateFilters,
+  );
   const validCountTooltip = useMemo(
     () => buildDisciplineFolderTooltip(filteredFiles, true),
     [filteredFiles],
@@ -469,6 +541,7 @@ export function useFilterWorkspace() {
   return {
     activeFilterCount,
     clearFilters,
+    dateFilters,
     errorMessage,
     expandedGroups,
     exportingInvalidReport,
@@ -520,7 +593,10 @@ export function useFilterWorkspace() {
     toggleSelectedOnly,
     toggleSort,
     toggleValidOnly,
+    toggleColumnVisibility,
+    setDateFilter,
     validCountTooltip,
+    visibleColumnKeys,
     visibleFavoriteProjects,
     visibleFilterGroups,
     clearSelectedFiles,

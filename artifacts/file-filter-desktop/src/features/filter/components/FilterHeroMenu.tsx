@@ -34,6 +34,11 @@ type NamingHeroMenuProps = {
   onUndoLastOperation: () => void;
 };
 
+type StandardHeroMenuProps = {
+  isAdminMode: boolean;
+  onToggleAdminMode: () => void;
+};
+
 function HeroMenu({ expandedAriaLabel, collapsedAriaLabel, items }: HeroMenuProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -143,6 +148,21 @@ export function NamingHeroMenu({
           label: "Cofnij ostatnią operację",
           onSelect: onUndoLastOperation,
           disabled: !canUndoLastOperation,
+        },
+      ]}
+    />
+  );
+}
+
+export function StandardHeroMenu({ isAdminMode, onToggleAdminMode }: StandardHeroMenuProps) {
+  return (
+    <HeroMenu
+      expandedAriaLabel="Zwiń menu standardu"
+      collapsedAriaLabel="Rozwiń menu standardu"
+      items={[
+        {
+          label: isAdminMode ? "Wyłącz tryb administratora" : "Włącz tryb administratora",
+          onSelect: onToggleAdminMode,
         },
       ]}
     />

@@ -1,7 +1,7 @@
 const { app } = require("electron");
 const fs = require("node:fs/promises");
 const path = require("node:path");
-const namingStandards = require("../../shared/naming-standards.json");
+const { loadNamingStandard } = require("./standard-config.cjs");
 
 const SECTION_KEYS = ["projects", "phases", "disciplines", "documentTypes", "levels", "statuses"];
 
@@ -55,7 +55,9 @@ function buildSectionLines(title, values) {
   return lines;
 }
 
-function buildDefaultDictionaryContent() {
+async function buildDefaultDictionaryContent() {
+  const namingStandardConfig = await loadNamingStandard();
+  const namingStandards = namingStandardConfig.activeValues;
   const phaseDefaults = Object.fromEntries(
     Object.entries(namingStandards.phases).map(([code, label]) => [code, stripCodePrefix(label)]),
   );
@@ -107,7 +109,7 @@ async function ensureDictionaryFile() {
     await fs.access(targetPath);
   } catch {
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
-    await fs.writeFile(targetPath, buildDefaultDictionaryContent(), "utf8");
+    await fs.writeFile(targetPath, await buildDefaultDictionaryContent(), "utf8");
   }
 
   return targetPath;

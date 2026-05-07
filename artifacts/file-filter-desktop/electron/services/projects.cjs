@@ -1,7 +1,7 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
-const namingStandards = require("../../shared/naming-standards.json");
 const { directoryExists } = require("./fs-utils.cjs");
+const { loadNamingStandard } = require("./standard-config.cjs");
 
 const SOURCE_FOLDERS = [
   { key: "PDF", folderName: "3. PDF", displayLabel: "PDF" },
@@ -53,13 +53,15 @@ const SEGMENT_DISPLAY_NAMES = {
   status: "Status",
 };
 
-const ALLOWED_SEGMENT_VALUES = {
-  phase: new Set(Object.keys(namingStandards.phases)),
-  disciplineCode: new Set(Object.keys(namingStandards.disciplines)),
-  documentType: new Set(Object.keys(namingStandards.documentTypes)),
-  level: new Set(Object.keys(namingStandards.levels)),
-  status: new Set(Object.keys(namingStandards.statuses)),
-};
+function buildAllowedSegmentValues(namingStandards) {
+  return {
+    phase: new Set(Object.keys(namingStandards.phases)),
+    disciplineCode: new Set(Object.keys(namingStandards.disciplines)),
+    documentType: new Set(Object.keys(namingStandards.documentTypes)),
+    level: new Set(Object.keys(namingStandards.levels)),
+    status: new Set(Object.keys(namingStandards.statuses)),
+  };
+}
 
 async function listProjects(projectsRoot) {
   const entries = await fs.readdir(projectsRoot, { withFileTypes: true });
@@ -102,7 +104,7 @@ function summarizeSegmentIssues(segmentIssues) {
     .join("\n")}`;
 }
 
-function parseFileName(filename, projectNumber) {
+function parseFileName(filename, projectNumber, allowedSegmentValues) {
   const extension = path.extname(filename);
   const baseName = path.basename(filename, extension);
   const segments = baseName.split("-").map((segment) => segment.trim());
@@ -133,7 +135,7 @@ function parseFileName(filename, projectNumber) {
     segmentIssues.set("projectNumber", "nie zgadza się z wybranym projektem");
   }
 
-  for (const [segmentKey, allowedValues] of Object.entries(ALLOWED_SEGMENT_VALUES)) {
+  for (const [segmentKey, allowedValues] of Object.entries(allowedSegmentValues)) {
     if (segmentIssues.has(segmentKey)) {
       continue;
     }
@@ -202,6 +204,10 @@ function buildMislocatedImageResult(filename) {
   };
 }
 
+function getFileCreatedAt(stats) {
+  return stats.birthtimeMs > 0 ? stats.birthtime : stats.ctime;
+}
+
 async function scanProject(projectsRoot, projectName) {
   if (!projectsRoot) {
     throw new Error("Najpierw wybierz folder ESP - Realizacje.");
@@ -210,6 +216,8 @@ async function scanProject(projectsRoot, projectName) {
   const projectPath = path.join(projectsRoot, projectName);
   const projectNumber = getProjectNumber(projectName);
   const projectDesignPath = path.join(projectPath, "4. Projektowanie");
+  const namingStandardConfig = await loadNamingStandard();
+  const allowedSegmentValues = buildAllowedSegmentValues(namingStandardConfig.activeValues);
 
   const results = [];
   const missingFolders = [];
@@ -242,15 +250,24 @@ async function scanProject(projectsRoot, projectName) {
           continue;
         }
 
+        let fileStats;
+        try {
+          fileStats = await fs.stat(absolutePath);
+        } catch {
+          continue;
+        }
+
         const parsed = IMAGE_EXTENSIONS.has(extension)
           ? buildMislocatedImageResult(entry.name)
-          : parseFileName(entry.name, projectNumber);
+          : parseFileName(entry.name, projectNumber, allowedSegmentValues);
 
         results.push({
           id: absolutePath,
           fileName: entry.name,
           absolutePath,
           folderPath: scanPath,
+          createdAt: getFileCreatedAt(fileStats).toISOString(),
+          modifiedAt: fileStats.mtime.toISOString(),
           projectName,
           projectNumber: projectNumber ?? "",
           sourceKey: source.key,

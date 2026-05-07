@@ -46,11 +46,31 @@ Ten plik służy do zapisywania ustaleń, które mają zatrzymać powracanie do 
 - Powód: nazwy plików, statusy i walidacje mają zmienną długość i trzeba to kontrolować.
 - Konsekwencje: szerokości kolumn definiujemy świadomie, a długie treści dostają przewidziane zachowanie.
 
+### D-006 Standard nazewnictwa jako wspólne źródło prawdy
+
+- Status: aktywna
+- Data: 2026-04-11
+- Decyzja: standard nazewnictwa traktujemy jako jedno współdzielone źródło prawdy dla modułów Filtr, Nazywanie i Odkodowanie.
+- Powód: te moduły operują na tych samych kodach, nazwach segmentów i regułach walidacji, więc rozjazd między nimi podnosi koszt zmian i ryzyko błędów.
+- Konsekwencje: nowe kody i opisy dodajemy najpierw do wspólnego modelu standardu, a dopiero potem wykorzystujemy w poszczególnych widokach i usługach.
+- Wpływ na UI: moduł instrukcji standardu może pokazywać te same dane, z których korzysta logika aplikacji, zamiast utrzymywać osobny opis.
+- Wpływ techniczny: eliminujemy lokalne wyjątki i duplikaty tam, gdzie standard jest już zdefiniowany centralnie.
+
+### D-007 Zmiana układu segmentów to migracja
+
+- Status: aktywna
+- Data: 2026-04-11
+- Decyzja: dodanie, usunięcie albo przestawienie segmentu standardowej nazwy traktujemy jako zmianę modelu danych i migrację, nie jako zwykłą edycję słownika kodów.
+- Powód: układ segmentów wpływa jednocześnie na parsery, walidację, generowanie nazw, filtrowanie i typy danych w aplikacji.
+- Konsekwencje: dopisanie nowego kodu w istniejącym segmencie może być lekką zmianą konfiguracyjną, ale np. dodanie pola „budynek” wymaga osobnej iteracji i świadomego planu migracji.
+- Wpływ na UI: tryb administracyjny nie powinien sugerować, że zmiana struktury standardu jest równie lekka jak dopisanie jednego kodu.
+- Wpływ techniczny: każda taka zmiana wymaga przeglądu modelu domeny, słowników, parserów oraz zgodności między modułami.
+
 ## Tematy do doprecyzowania
 
 - Minimalna szerokość, którą oficjalnie wspieramy bez kompromisów.
 - Które operacje naming muszą być zawsze dostępne w jednym widoku, a które mogą być schowane głębiej.
-- Które nazwy i skróty są finalne, a które nadal robocze.
+- Które nazwy i skróty są finalne, a które nadal robocze w obrębie obecnego układu segmentów.
 
 ## Szablon nowej decyzji
 

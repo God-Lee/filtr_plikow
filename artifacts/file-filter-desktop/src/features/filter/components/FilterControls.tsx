@@ -7,13 +7,11 @@ type FilterControlsProps = {
   onFavoriteToggle: () => void;
   onProjectQueryChange: (value: string) => void;
   onProjectSelect: (project: string) => void;
-  onSearchQueryChange: (value: string) => void;
   projectOptionRefs: MutableRefObject<Record<string, HTMLButtonElement | null>>;
   projectPickerOpen: boolean;
   projectPickerRef: RefObject<HTMLDivElement | null>;
   projectQuery: string;
   projectsRoot: string;
-  searchQuery: string;
   selectedProject: string;
   selectedProjectIsFavorite: boolean;
   setHighlightedProjectIndex: (updater: number | ((current: number) => number)) => void;
@@ -27,13 +25,11 @@ export function FilterControls({
   onFavoriteToggle,
   onProjectQueryChange,
   onProjectSelect,
-  onSearchQueryChange,
   projectOptionRefs,
   projectPickerOpen,
   projectPickerRef,
   projectQuery,
   projectsRoot,
-  searchQuery,
   selectedProject,
   selectedProjectIsFavorite,
   setHighlightedProjectIndex,
@@ -167,17 +163,6 @@ export function FilterControls({
             ) : null}
           </div>
         </div>
-      </div>
-
-      <div className="control-bar search-control-bar search-control-bar-compact">
-        <label className="field search-field">
-          <span>Szukaj</span>
-          <input
-            value={searchQuery}
-            onChange={(event) => onSearchQueryChange(event.target.value)}
-            placeholder="Nazwa pliku, kod, opis, ścieżka..."
-          />
-        </label>
       </div>
     </section>
   );
