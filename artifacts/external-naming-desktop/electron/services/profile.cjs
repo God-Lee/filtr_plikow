@@ -2,6 +2,9 @@ const { dialog } = require("electron");
 const fs = require("node:fs/promises");
 
 const SECTION_KEYS = ["phases", "disciplines", "documentTypes", "levels", "statuses"];
+const LEVEL_OPTION_OVERRIDES = [
+  { code: "P3", label: "P3 - Piętro 3" },
+];
 
 function normalizeCode(value) {
   return String(value ?? "").trim().toUpperCase();
@@ -52,6 +55,14 @@ function sanitizeBuildings(value, namingStandardVersion) {
   return sanitizeOptionList(rawBuildings, "buildings").filter((option) => /^(?:[A-I]|X)$/.test(option.code));
 }
 
+function addMissingOptions(options, additions) {
+  const existingCodes = new Set(options.map((option) => option.code));
+  return [
+    ...options,
+    ...additions.filter((option) => !existingCodes.has(option.code)),
+  ];
+}
+
 function sanitizeDefaults(value) {
   const source = value && typeof value === "object" ? value : {};
   return {
@@ -87,6 +98,7 @@ function sanitizeProfile(value, sourcePath) {
   for (const sectionKey of SECTION_KEYS) {
     allowedValues[sectionKey] = sanitizeOptionList(sourceAllowedValues[sectionKey], sectionKey);
   }
+  allowedValues.levels = addMissingOptions(allowedValues.levels, LEVEL_OPTION_OVERRIDES);
 
   allowedValues.buildings = sanitizeBuildings(sourceAllowedValues.buildings, namingStandardVersion);
 

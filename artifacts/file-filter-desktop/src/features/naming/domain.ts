@@ -45,6 +45,7 @@ const LEVEL_ALIASES: Record<string, string[]> = {
   P0: ["parter"],
   P1: ["pietro 1", "piętro 1", "1 pietro", "1 piętro", "p1"],
   P2: ["pietro 2", "piętro 2", "2 pietro", "2 piętro", "p2"],
+  P3: ["pietro 3", "piętro 3", "3 pietro", "3 piętro", "p3"],
   D0: ["dach", "d0"],
   B1: ["poziom -1", "kondygnacja podziemna 1", "b1", "piwnica 1"],
   B2: ["poziom -2", "kondygnacja podziemna 2", "b2", "piwnica 2"],

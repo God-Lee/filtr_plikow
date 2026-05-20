@@ -140,7 +140,7 @@ function validateExportItems(items) {
 
 async function checkExportTargets(outputRoot, items) {
   if (!outputRoot) {
-    throw new Error("Najpierw wybierz folder wynikowy.");
+    throw new Error("Najpierw wybierz folder docelowy.");
   }
 
   validateExportItems(items);
@@ -166,7 +166,7 @@ async function checkExportTargets(outputRoot, items) {
 
 async function exportFiles(outputRoot, items, overwriteExisting) {
   if (!outputRoot) {
-    throw new Error("Najpierw wybierz folder wynikowy.");
+    throw new Error("Najpierw wybierz folder docelowy.");
   }
 
   validateExportItems(items);

@@ -669,11 +669,12 @@ function extractOptions(files: FileRecord[], group: FilterGroup<FileRecord>) {
       "P0 - Parter",
       "P1 - Piętro 1",
       "P2 - Piętro 2",
-      "M0 - Półpiętro nad parterem",
-      "M1 - Półpiętro nad 1 piętrem",
+      "P3 - Piętro 3",
       "D0 - Dach",
       "B1 - Pierwsza kondygnacja podziemna",
       "B2 - Druga kondygnacja podziemna",
+      "M0 - Półpiętro nad parterem",
+      "M1 - Półpiętro nad 1 piętrem",
       "XX - Nie dotyczy/wiele poziomów",
     ]);
   }

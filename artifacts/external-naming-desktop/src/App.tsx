@@ -14,11 +14,15 @@ import {
   createProjectFromProfile,
   formatFileSize,
   getBatchDuplicateMessages,
+  getDuplicateTargetNameRowIds,
   getOptionLabel,
   getProjectTitle,
   getSelectedRows,
+  getSheetNumberDuplicateMessages,
+  getSheetNumberDuplicateRowIds,
   mergeDefaults,
   normalizeRevision,
+  SHEET_NUMBER_DUPLICATE_MESSAGE,
   validateRow,
 } from "./domain/naming";
 import dwgIconUrl from "../../file-filter-desktop/src/assets/extension-icons/dwg.svg";
@@ -46,9 +50,6 @@ const EXTENSION_FILTERS: Array<{
 const KNOWN_FILTER_EXTENSIONS = new Set(
   EXTENSION_FILTERS.flatMap((filter) => filter.extensions).map((extension) => extension.toLowerCase()),
 );
-const SHEET_NUMBER_DUPLICATE_MESSAGE =
-  "Ten sam numer arkusza występuje już w tym projekcie dla tej fazy i branży";
-
 function buildSession(projects: SessionProject[], activeProjectId: string, outputRoot: string): AppSession {
   return {
     version: SESSION_VERSION,
@@ -73,7 +74,6 @@ function sanitizeLoadedSession(session: AppSession | null): AppSession | null {
         ...project,
         rows: project.rows.map((row) => ({
           ...row,
-          drawingNumberMode: row.drawingNumberMode ?? "auto",
         })),
       })),
   };
@@ -133,69 +133,81 @@ function normalizeDrawingNumberInput(value: string) {
 
 function replaceDrawingLetter(drawingNumber: string, letter: string) {
   const digits = getDrawingDigits(drawingNumber);
+  if (!digits) {
+    return "";
+  }
+
   return combineDrawingNumber(letter, digits);
 }
 
-function getDuplicateRowIds(project: SessionProject, rows: FileNamingRow[], selectedIds: Set<string>) {
-  const seen = new Map<string, string>();
-  const duplicates = new Set<string>();
+const PHASE_ORDER = ["PK", "PF", "PB", "PT", "PW", "PZ", "DP"];
+const LEVEL_ORDER = ["XX", "P0", "P1", "P2", "P3", "D0", "B1", "B2", "M0", "M1"];
+const LEVEL_OPTION_OVERRIDES: CodeOption[] = [
+  { code: "P3", label: "P3 - Piętro 3" },
+];
 
-  for (const row of rows) {
-    if (!selectedIds.has(row.id)) {
-      continue;
-    }
-
-    const targetFileName = buildTargetFileName(row, project.profile);
-    if (!targetFileName) {
-      continue;
-    }
-
-    const key = [project.profile.projectNumber, row.bucket, targetFileName.toLocaleLowerCase("pl")].join("|");
-    const existingRowId = seen.get(key);
-    if (existingRowId) {
-      duplicates.add(existingRowId);
-      duplicates.add(row.id);
-    } else {
-      seen.set(key, row.id);
-    }
-  }
-
-  return duplicates;
+function getSortedOptions(options: CodeOption[]) {
+  return [...options].sort((left, right) =>
+    getOptionLabel(options, left.code).localeCompare(getOptionLabel(options, right.code), "pl", {
+      numeric: true,
+      sensitivity: "base",
+    }),
+  );
 }
 
-function getSheetNumberDuplicateRowIds(project: SessionProject, rows: FileNamingRow[], selectedIds: Set<string>) {
-  const groups = new Map<string, FileNamingRow[]>();
+function getOrderedPhaseOptions(options: CodeOption[]) {
+  const phaseIndex = new Map(PHASE_ORDER.map((code, index) => [code, index]));
 
-  for (const row of rows) {
-    if (!selectedIds.has(row.id) || !row.phase || !row.discipline || !/^[A-Z]\d{2}$/.test(row.drawingNumber)) {
-      continue;
+  return [...options].sort((left, right) => {
+    const leftIndex = phaseIndex.get(left.code) ?? Number.POSITIVE_INFINITY;
+    const rightIndex = phaseIndex.get(right.code) ?? Number.POSITIVE_INFINITY;
+
+    if (leftIndex !== rightIndex) {
+      return leftIndex - rightIndex;
     }
 
-    const key = [project.profile.projectNumber, row.phase, row.discipline, row.drawingNumber].join("|");
-    groups.set(key, [...(groups.get(key) ?? []), row]);
-  }
-
-  const duplicates = new Set<string>();
-  for (const rowsInGroup of groups.values()) {
-    if (rowsInGroup.length < 2) {
-      continue;
-    }
-
-    const buckets = new Set(rowsInGroup.map((row) => row.bucket));
-    const isAllowedPdfEdtPair = rowsInGroup.length === 2 && buckets.has("PDF") && buckets.has("EDT");
-    if (!isAllowedPdfEdtPair) {
-      rowsInGroup.forEach((row) => duplicates.add(row.id));
-    }
-  }
-
-  return duplicates;
+    return getOptionLabel(options, left.code).localeCompare(getOptionLabel(options, right.code), "pl", {
+      numeric: true,
+      sensitivity: "base",
+    });
+  });
 }
 
-function getSheetNumberDuplicateMessages(projects: SessionProject[], activeRowIdsByProject: Record<string, string[]>) {
-  return projects.flatMap((project) => {
-    const activeRows = project.rows.filter((row) => activeRowIdsByProject[project.id]?.includes(row.id) ?? true);
-    const duplicateIds = getSheetNumberDuplicateRowIds(project, activeRows, new Set(project.selectedFileIds));
-    return duplicateIds.size > 0 ? [`${project.profile.projectNumber}: ${SHEET_NUMBER_DUPLICATE_MESSAGE}`] : [];
+function addMissingOptions(options: CodeOption[], additions: CodeOption[]) {
+  const existingCodes = new Set(options.map((option) => option.code));
+  return [...options, ...additions.filter((option) => !existingCodes.has(option.code))];
+}
+
+function getOrderedLevelOptions(options: CodeOption[]) {
+  const optionsWithOverrides = addMissingOptions(options, LEVEL_OPTION_OVERRIDES);
+  const levelIndex = new Map(LEVEL_ORDER.map((code, index) => [code, index]));
+
+  return [...optionsWithOverrides].sort((left, right) => {
+    const leftIndex = levelIndex.get(left.code) ?? Number.POSITIVE_INFINITY;
+    const rightIndex = levelIndex.get(right.code) ?? Number.POSITIVE_INFINITY;
+
+    if (leftIndex !== rightIndex) {
+      return leftIndex - rightIndex;
+    }
+
+    return getOptionLabel(optionsWithOverrides, left.code).localeCompare(getOptionLabel(optionsWithOverrides, right.code), "pl", {
+      numeric: true,
+      sensitivity: "base",
+    });
+  });
+}
+
+function getSortedOptionsWithFirstCode(options: CodeOption[], firstCode: string) {
+  return getSortedOptions(options).sort((left, right) => {
+    if (left.code === firstCode) {
+      return -1;
+    }
+
+    if (right.code === firstCode) {
+      return 1;
+    }
+
+    return 0;
   });
 }
 
@@ -204,20 +216,24 @@ function CodeSelect({
   value,
   options,
   disabled = false,
+  sortOptions = true,
   onChange,
 }: {
   label: string;
   value: string;
   options: CodeOption[];
   disabled?: boolean;
+  sortOptions?: boolean;
   onChange: (value: string) => void;
 }) {
+  const displayOptions = useMemo(() => (sortOptions ? getSortedOptions(options) : options), [options, sortOptions]);
+
   return (
     <label className="field">
       <span>{label}</span>
       <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
         <option value="">Wybierz</option>
-        {options.map((option) => (
+        {displayOptions.map((option) => (
           <option key={option.code} value={option.code}>
             {getOptionLabel(options, option.code)}
           </option>
@@ -403,12 +419,10 @@ export function App() {
       updateProject(projectId, (current) => ({
         ...current,
         workingFolder: targetFolder,
-        files: result.files,
         rows,
         selectedFileIds: project.rows.length === 0 ? rows.map((row) => row.id) : nextSelectedIds,
         skippedOversized: result.skippedOversized,
         skippedUnreadable: result.skippedUnreadable,
-        lastRefreshedAt: new Date().toISOString(),
       }));
 
       showMessage(`Wczytano ${rows.length} plików z folderu roboczego.`, "success");
@@ -430,7 +444,6 @@ export function App() {
             ...row,
             discipline: patch.discipline ?? row.discipline,
             drawingNumber: replaceDrawingLetter(row.drawingNumber, disciplinePrefix),
-            drawingNumberMode: "manual" as const,
           }))
         : current.rows,
     }));
@@ -497,7 +510,7 @@ export function App() {
     updateProject(project.id, (current) => ({
       ...current,
       rows: current.rows.map((row) =>
-        row.id === rowId ? { ...row, drawingNumber, drawingNumberMode: "manual" as const } : row,
+        row.id === rowId ? { ...row, drawingNumber } : row,
       ),
     }));
   }
@@ -506,13 +519,13 @@ export function App() {
     updateProject(project.id, (current) => ({
       ...current,
       rows: current.rows.map((row) =>
-        rowNumbers[row.id] ? { ...row, drawingNumber: rowNumbers[row.id], drawingNumberMode: "manual" as const } : row,
+        rowNumbers[row.id] ? { ...row, drawingNumber: rowNumbers[row.id] } : row,
       ),
     }));
   }
 
   async function chooseOutputRoot() {
-    const folderPath = await externalNamingApi.chooseDirectory("Wybierz folder wynikowy");
+    const folderPath = await externalNamingApi.chooseDirectory("Wybierz folder docelowy");
     if (folderPath) {
       setOutputRoot(folderPath);
     }
@@ -542,7 +555,7 @@ export function App() {
 
     let targetRoot = outputRoot;
     if (!targetRoot) {
-      const selectedFolder = await externalNamingApi.chooseDirectory("Wybierz folder wynikowy");
+      const selectedFolder = await externalNamingApi.chooseDirectory("Wybierz folder docelowy");
       if (!selectedFolder) {
         return;
       }
@@ -583,15 +596,18 @@ export function App() {
   }
 
   async function clearSessionNow() {
-    if (!window.confirm("Wyczyścić zapisaną sesję i bieżące projekty?")) {
+    if (!window.confirm("Wyczyścić dane robocze sesji? Zaimportowane projekty zostaną na liście.")) {
       return;
     }
 
-    await externalNamingApi.clearSession();
-    setProjects([]);
-    setActiveProjectId("");
+    const clearedProjects = projects.map((project) => createProjectFromProfile(project.profile));
+    const nextActiveProjectId = clearedProjects.find((project) => project.id === activeProjectId)?.id ?? clearedProjects[0]?.id ?? "";
+    await externalNamingApi.saveSession(buildSession(clearedProjects, nextActiveProjectId, ""));
+    setProjects(clearedProjects);
+    setActiveProjectId(nextActiveProjectId);
     setOutputRoot("");
-    showMessage("Sesja została wyczyszczona.", "muted");
+    setActiveRowIdsByProject({});
+    showMessage("Dane robocze sesji zostały wyczyszczone. Projekty zostały zachowane.", "muted");
   }
 
   return (
@@ -605,7 +621,7 @@ export function App() {
             Importuj profil JSON
           </button>
           <button type="button" className="secondary-button" onClick={chooseOutputRoot}>
-            Folder wynikowy
+            Folder docelowy
           </button>
           <button type="button" className="secondary-button" onClick={saveSessionNow} disabled={projects.length === 0}>
             Zapisz sesję
@@ -721,18 +737,33 @@ function ProjectWorkspace({
   const defaultRenumberStart = `${project.defaults.discipline.trim().toUpperCase()[0] ?? "X"}01`;
   const [renumberMenuOpen, setRenumberMenuOpen] = useState(false);
   const [renumberDraft, setRenumberDraft] = useState(defaultRenumberStart);
-  const selectedIds = new Set(project.selectedFileIds);
+  const selectedIds = useMemo(() => new Set(project.selectedFileIds), [project.selectedFileIds]);
   const orderedRows = useMemo(
     () => getOrderedRows(project.rows, activeFilter, sourceSortDirection),
     [activeFilter, project.rows, sourceSortDirection],
   );
   const orderedActiveRowIds = useMemo(() => orderedRows.map((row) => row.id), [orderedRows]);
   const activeSelectedRows = orderedRows.filter((row) => selectedIds.has(row.id));
-  const duplicateRowIds = useMemo(() => getDuplicateRowIds(project, orderedRows, selectedIds), [orderedRows, project, selectedIds]);
+  const duplicateRowIds = useMemo(
+    () => getDuplicateTargetNameRowIds(project, orderedRows, selectedIds),
+    [orderedRows, project, selectedIds],
+  );
   const sheetNumberDuplicateRowIds = useMemo(
     () => getSheetNumberDuplicateRowIds(project, orderedRows, selectedIds),
     [orderedRows, project, selectedIds],
   );
+  const orderedPhases = useMemo(() => getOrderedPhaseOptions(profile.allowedValues.phases), [profile.allowedValues.phases]);
+  const sortedDisciplines = useMemo(
+    () => getSortedOptionsWithFirstCode(profile.allowedValues.disciplines, "XX"),
+    [profile.allowedValues.disciplines],
+  );
+  const sortedDocumentTypes = useMemo(
+    () => getSortedOptions(profile.allowedValues.documentTypes),
+    [profile.allowedValues.documentTypes],
+  );
+  const sortedBuildings = useMemo(() => getSortedOptions(profile.allowedValues.buildings), [profile.allowedValues.buildings]);
+  const sortedLevels = useMemo(() => getOrderedLevelOptions(profile.allowedValues.levels), [profile.allowedValues.levels]);
+  const sortedStatuses = useMemo(() => getSortedOptions(profile.allowedValues.statuses), [profile.allowedValues.statuses]);
   const projectInvalidSelectedCount = orderedRows.filter(
     (row) => selectedIds.has(row.id) && validateRow(row, profile),
   ).length;
@@ -876,13 +907,15 @@ function ProjectWorkspace({
             <CodeSelect
               label="Faza"
               value={project.defaults.phase}
-              options={profile.allowedValues.phases}
+              options={orderedPhases}
+              sortOptions={false}
               onChange={(phase) => onDefaultsChange(project, { phase })}
             />
             <CodeSelect
               label="Branża"
               value={project.defaults.discipline}
-              options={profile.allowedValues.disciplines}
+              options={sortedDisciplines}
+              sortOptions={false}
               onChange={(discipline) => onDefaultsChange(project, { discipline })}
             />
             <CodeSelect
@@ -902,7 +935,8 @@ function ProjectWorkspace({
             <CodeSelect
               label="Poziom"
               value={project.defaults.level}
-              options={profile.allowedValues.levels}
+              options={sortedLevels}
+              sortOptions={false}
               onChange={(level) => onDefaultsChange(project, { level })}
             />
             <TextField
@@ -959,7 +993,7 @@ function ProjectWorkspace({
 
         <div className="export-note">
           <span>
-            Folder wynikowy: {outputRoot || "zostanie wybrany przy eksporcie"} · Widoczne: {orderedRows.length}
+            Folder docelowy: {outputRoot || "zostanie wybrany przy eksporcie"} · Widoczne: {orderedRows.length}
           </span>
           <span>PDF trafi do `3. PDF`, pozostałe pliki do `2. EDT`.</span>
         </div>
@@ -1099,7 +1133,7 @@ function ProjectWorkspace({
                           onChange={(event) => onRowChange(project, row.id, { documentType: event.target.value })}
                         >
                           <option value="">Wybierz</option>
-                          {profile.allowedValues.documentTypes.map((option) => (
+                          {sortedDocumentTypes.map((option) => (
                             <option key={option.code} value={option.code}>
                               {getOptionLabel(profile.allowedValues.documentTypes, option.code)}
                             </option>
@@ -1114,7 +1148,7 @@ function ProjectWorkspace({
                             onChange={(event) => onRowChange(project, row.id, { building: event.target.value })}
                           >
                             <option value="">Wybierz</option>
-                            {profile.allowedValues.buildings.map((option) => (
+                            {sortedBuildings.map((option) => (
                               <option key={option.code} value={option.code}>
                                 {getOptionLabel(profile.allowedValues.buildings, option.code)}
                               </option>
@@ -1129,7 +1163,7 @@ function ProjectWorkspace({
                           onChange={(event) => onRowChange(project, row.id, { level: event.target.value })}
                         >
                           <option value="">Wybierz</option>
-                          {profile.allowedValues.levels.map((option) => (
+                          {sortedLevels.map((option) => (
                             <option key={option.code} value={option.code}>
                               {getOptionLabel(profile.allowedValues.levels, option.code)}
                             </option>
@@ -1183,7 +1217,7 @@ function ProjectWorkspace({
                           onChange={(event) => onRowChange(project, row.id, { status: event.target.value })}
                         >
                           <option value="">Wybierz</option>
-                          {profile.allowedValues.statuses.map((option) => (
+                          {sortedStatuses.map((option) => (
                             <option key={option.code} value={option.code}>
                               {getOptionLabel(profile.allowedValues.statuses, option.code)}
                             </option>

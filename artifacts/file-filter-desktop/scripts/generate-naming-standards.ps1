@@ -131,6 +131,24 @@ function Convert-ValuesToMap {
   return $result
 }
 
+function Add-LevelThree {
+  param([System.Collections.IDictionary]$Levels)
+
+  if (-not $Levels -or $Levels.Contains("P3")) {
+    return $Levels
+  }
+
+  $result = [ordered]@{}
+  foreach ($key in $Levels.Keys) {
+    $result[$key] = $Levels[$key]
+    if ($key -eq "P2") {
+      $result["P3"] = "P3 - Pi" + [char]0x0119 + "tro 3"
+    }
+  }
+
+  return $result
+}
+
 $resolvedWorkbookPath = (Resolve-Path $WorkbookPath).Path
 $archive = [System.IO.Compression.ZipFile]::OpenRead($resolvedWorkbookPath)
 
@@ -171,6 +189,7 @@ try {
 
     $namingStandards[$definitionsByField[$sqref]] = Convert-ValuesToMap -Values $values
   }
+  $namingStandards["levels"] = Add-LevelThree -Levels $namingStandards["levels"]
 
   $outputDirectory = Split-Path -Parent $OutputPath
   if ($outputDirectory -and -not (Test-Path $outputDirectory)) {

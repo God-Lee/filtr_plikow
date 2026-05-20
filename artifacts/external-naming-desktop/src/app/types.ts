@@ -52,7 +52,6 @@ export type WorkspaceFilesResult = {
 };
 
 export type ExportBucket = "PDF" | "EDT";
-export type DrawingNumberMode = "auto" | "manual";
 
 export type FileNamingRow = {
   id: string;
@@ -68,7 +67,6 @@ export type FileNamingRow = {
   building: string;
   level: string;
   drawingNumber: string;
-  drawingNumberMode?: DrawingNumberMode;
   revision: string;
   status: string;
 };
@@ -77,14 +75,11 @@ export type SessionProject = {
   id: string;
   profile: ProjectProfile;
   workingFolder: string;
-  outputMessage: string;
   skippedOversized: number;
   skippedUnreadable: number;
-  files: WorkspaceFile[];
   rows: FileNamingRow[];
   selectedFileIds: string[];
   defaults: ProjectDefaults;
-  lastRefreshedAt: string;
 };
 
 export type AppSession = {

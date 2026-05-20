@@ -9,6 +9,9 @@ import type {
   WorkspaceFile,
 } from "../app/types";
 
+export const SHEET_NUMBER_DUPLICATE_MESSAGE =
+  "Ten sam numer arkusza występuje już w tym projekcie dla tej fazy i branży";
+
 export const EMPTY_DEFAULTS: ProjectDefaults = {
   phase: "",
   discipline: "",
@@ -81,14 +84,11 @@ export function createProjectFromProfile(profile: ProjectProfile, remembered?: P
     id: profile.projectNumber,
     profile,
     workingFolder: "",
-    outputMessage: "",
     skippedOversized: 0,
     skippedUnreadable: 0,
-    files: [],
     rows: [],
     selectedFileIds: [],
     defaults,
-    lastRefreshedAt: "",
   };
 }
 
@@ -112,11 +112,15 @@ export function inferDrawingNumber(fileName: string, disciplineCode: string) {
 
 function replaceDrawingPrefix(drawingNumber: string, disciplineCode: string) {
   const disciplinePrefix = getDisciplineDrawingPrefix(disciplineCode);
-  if (!disciplinePrefix) {
+  if (!disciplinePrefix || !drawingNumber) {
     return drawingNumber;
   }
 
   const digits = drawingNumber.match(/\d{1,2}/)?.[0] ?? "";
+  if (!digits) {
+    return "";
+  }
+
   return `${disciplinePrefix}${digits.padStart(digits.length === 1 ? 2 : digits.length, "0")}`;
 }
 
@@ -152,7 +156,6 @@ export function buildRowsFromFiles(
     if (existing) {
       return {
         ...existing,
-        drawingNumberMode: existing.drawingNumberMode ?? "auto",
         fileName: file.fileName,
         relativePath: file.relativePath,
         extension: file.extension,
@@ -179,7 +182,6 @@ export function buildRowsFromFiles(
       building: profile.namingStandardVersion === 4 ? defaults.building || "A" : "",
       level: defaults.level,
       drawingNumber,
-      drawingNumberMode: drawingNumber ? ("manual" as const) : ("auto" as const),
       revision: inferredRevision || defaults.revision,
       status: defaults.status,
     };
@@ -260,6 +262,61 @@ export function getSelectedRows(projects: SessionProject[], activeRowIdsByProjec
   });
 }
 
+export function getDuplicateTargetNameRowIds(project: SessionProject, rows: FileNamingRow[], selectedIds: Set<string>) {
+  const seen = new Map<string, string>();
+  const duplicates = new Set<string>();
+
+  for (const row of rows) {
+    if (!selectedIds.has(row.id)) {
+      continue;
+    }
+
+    const targetFileName = buildTargetFileName(row, project.profile);
+    if (!targetFileName) {
+      continue;
+    }
+
+    const key = [project.profile.projectNumber, row.bucket, targetFileName.toLocaleLowerCase("pl")].join("|");
+    const existingRowId = seen.get(key);
+    if (existingRowId) {
+      duplicates.add(existingRowId);
+      duplicates.add(row.id);
+    } else {
+      seen.set(key, row.id);
+    }
+  }
+
+  return duplicates;
+}
+
+export function getSheetNumberDuplicateRowIds(project: SessionProject, rows: FileNamingRow[], selectedIds: Set<string>) {
+  const groups = new Map<string, FileNamingRow[]>();
+
+  for (const row of rows) {
+    if (!selectedIds.has(row.id) || !row.phase || !row.discipline || !/^[A-Z]\d{2}$/.test(row.drawingNumber)) {
+      continue;
+    }
+
+    const key = [project.profile.projectNumber, row.phase, row.discipline, row.drawingNumber].join("|");
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+
+  const duplicates = new Set<string>();
+  for (const rowsInGroup of groups.values()) {
+    if (rowsInGroup.length < 2) {
+      continue;
+    }
+
+    const buckets = new Set(rowsInGroup.map((row) => row.bucket));
+    const isAllowedPdfEdtPair = rowsInGroup.length === 2 && buckets.has("PDF") && buckets.has("EDT");
+    if (!isAllowedPdfEdtPair) {
+      rowsInGroup.forEach((row) => duplicates.add(row.id));
+    }
+  }
+
+  return duplicates;
+}
+
 export function getBatchDuplicateMessages(projects: SessionProject[], activeRowIdsByProject?: Record<string, string[]>) {
   const selectedRows = getSelectedRows(projects, activeRowIdsByProject).filter((item) => item.targetFileName);
   const seen = new Map<string, string>();
@@ -281,6 +338,14 @@ export function getBatchDuplicateMessages(projects: SessionProject[], activeRowI
   }
 
   return Array.from(duplicates).sort((left, right) => left.localeCompare(right, "pl"));
+}
+
+export function getSheetNumberDuplicateMessages(projects: SessionProject[], activeRowIdsByProject: Record<string, string[]>) {
+  return projects.flatMap((project) => {
+    const activeRows = project.rows.filter((row) => activeRowIdsByProject[project.id]?.includes(row.id) ?? true);
+    const duplicateIds = getSheetNumberDuplicateRowIds(project, activeRows, new Set(project.selectedFileIds));
+    return duplicateIds.size > 0 ? [`${project.profile.projectNumber}: ${SHEET_NUMBER_DUPLICATE_MESSAGE}`] : [];
+  });
 }
 
 export function buildExportItems(projects: SessionProject[], activeRowIdsByProject?: Record<string, string[]>): ExportItem[] {
