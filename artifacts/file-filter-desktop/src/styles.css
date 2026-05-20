@@ -3939,6 +3939,12 @@ tbody tr:hover {
   vertical-align: middle;
 }
 
+.naming-table .column-building,
+.naming-table td.column-building {
+  width: 72px;
+  vertical-align: middle;
+}
+
 .naming-table .column-level,
 .naming-table td.column-level {
   width: 72px;
@@ -4604,6 +4610,11 @@ tbody tr:hover .naming-validation-pill.warning {
   .naming-table .column-type,
   .naming-table td.column-type {
     width: 72px;
+  }
+
+  .naming-table .column-building,
+  .naming-table td.column-building {
+    width: 68px;
   }
 
   .naming-table .column-level,

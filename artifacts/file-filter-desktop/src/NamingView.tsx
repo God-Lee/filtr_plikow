@@ -1,26 +1,73 @@
 import {
-  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
-  type RefObject,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import type { NamingHeroMenuState } from "./app/types";
-import {
-  getNamingStandardSnapshot,
-  subscribeNamingStandard,
-  useNamingStandardVersion,
-} from "./app/standard-config";
-import pdfIcon from "./assets/extension-icons/pdf.svg";
-import wordIcon from "./assets/extension-icons/word.svg";
-import excelIcon from "./assets/extension-icons/excel.svg";
-import dwgIcon from "./assets/extension-icons/dwg.svg";
+import type {
+  EvaluatedRow,
+  ExtensionFilterGroup,
+  LastBulkOperation,
+  NamingFileRow,
+  NamingFolderFile,
+  NamingHeroMenuState,
+  NamingOption,
+  NamingStandardVersion,
+  NamingViewDraft,
+  PendingBulkApply,
+  ResolvedSession,
+} from "./app/types";
+import { useNamingStandardVersion } from "./app/standard-config";
+import { normalizeText as normalize } from "./app/utils/text";
 import { useTransientBanner } from "./app/useTransientBanner";
 import { InlineCodeSelect } from "./features/naming/components/InlineCodeSelect";
 import { RevisionInput } from "./features/naming/components/RevisionInput";
 import { RevisionPresetInput } from "./features/naming/components/RevisionPresetInput";
+import {
+  BUILDING_DESIGNATION_OPTIONS,
+  DISCIPLINE_OPTIONS,
+  DOCUMENT_TYPE_OPTIONS,
+  EXTENSION_FILTER_ICON_MAP,
+  LEVEL_OPTIONS,
+  PHASE_OPTIONS,
+  STATUS_OPTIONS,
+  areStringArraysEqual,
+  buildDrawingConflictKey,
+  buildDrawingContextKey,
+  buildInitialRow,
+  buildTargetFileName,
+  buildTargetIdentityKey,
+  dedupeRowsBySourcePath,
+  extractBaseName,
+  extractFileNameFromInput,
+  extractProjectNumber,
+  findOptionByCode,
+  formatDrawingNumber,
+  formatPolishCount,
+  getExtensionFilterGroup,
+  getNextDrawingNumber,
+  getRevisionFromFileName,
+  getRevisionValidationMessage,
+  getStatusFromFileName,
+  getSuggestedOptions,
+  inferDrawingNumber,
+  isBuildingDesignationValid,
+  isDrawingNumberValidForDiscipline,
+  isProjectNumberValid,
+  isRevisionCodeValid,
+  isRevisionPartialInputAllowed,
+  isRevisionValidationMessage,
+  joinWindowsPath,
+  mergeRowWithLatestFile,
+  normalizeFileSystemPath,
+  normalizeFileSystemPathList,
+  normalizeRevisionInput,
+  parseStandardizedFileName,
+  resolveOption,
+} from "./features/naming/domain";
+
+const BULK_STATUS_INPUT_MESSAGE = "Wpisz poprawny status: S0, S1, S2 lub A1.";
 
 function shouldToggleSelectionFromTarget(target: EventTarget | null) {
   return target instanceof HTMLElement && !target.closest("button, input, select, textarea, a, label");
@@ -28,780 +75,21 @@ function shouldToggleSelectionFromTarget(target: EventTarget | null) {
 
 type NamingViewProps = {
   selectedProjectName: string;
+  namingStandardVersion: NamingStandardVersion | null;
   refreshWorkingFolderRequestToken: number;
   undoLastOperationRequestToken: number;
   onHeroMenuStateChange: (state: NamingHeroMenuState) => void;
 };
 
-type NamingOption = {
-  code: string;
-  label: string;
-  searchTerms: string[];
-};
-
-type NamingFolderFile = {
-  id: string;
-  fileName: string;
-  absolutePath: string;
-  folderPath: string;
-  relativePath: string;
-  extension: string;
-  baseName: string;
-};
-
-type NamingFileRow = {
-  id: string;
-  sourcePath: string;
-  fileName: string;
-  relativePath: string;
-  extension: string;
-  documentType: string;
-  level: string;
-  drawingNumber: string;
-  drawingNumberLocked: boolean;
-  revision: string;
-  status: string;
-};
-
-type ResolvedSession = {
-  projectNumber: string;
-  phaseCode: string;
-  disciplineCode: string;
-};
-
-type ParsedStandardName = {
-  projectNumber: string;
-  phase: string;
-  disciplineCode: string;
-  documentType: string;
-  level: string;
-  drawingNumber: string;
-  revision: string;
-  status: string;
-};
-
-type RowValidation = {
-  status: "ok" | "warning" | "error" | "copied";
-  message: string;
-  details: string[];
-  warningMessage?: string;
-};
-
-type EvaluatedRow = {
-  row: NamingFileRow;
-  targetFileName: string;
-  targetPath: string;
-  validation: RowValidation;
-};
-
-type InlineCodeSelectProps = {
-  value: string;
-  options: NamingOption[];
-  placeholder?: string;
-  menuLabel: string;
-  onChange: (nextValue: string) => void;
-};
-
-type RevisionInputProps = {
-  id?: string;
-  value: string;
-  placeholder?: string;
-  ariaLabel: string;
-  onCommit: (nextValue: string) => void;
-  onInvalid: (message: string) => void;
-  inputRef?: RefObject<HTMLInputElement | null>;
-  clearSignal?: number;
-};
-
-type RevisionPresetInputProps = RevisionInputProps & {
-  menuLabel: string;
-};
-
-type NamingViewDraft = {
-  projectNumber: string;
-  phaseInput: string;
-  disciplineInput: string;
-  defaultRevision: string;
-  defaultRevisionInput: string;
-  defaultStatus: string;
-  workingFolder: string;
-  targetFolder: string;
-  ignoredSourcePathsByFolder: Record<string, string[]>;
-};
-
-type PendingBulkApply = {
-  changedField: "revision" | "status";
-  nextRevision: string;
-  nextStatus: string;
-  previousRevision: string;
-  previousStatus: string;
-};
-
-type LastBulkOperation = {
-  rows: NamingFileRow[];
-  message: string;
-};
-
-type ExtensionFilterGroup = "pdf" | "dwg" | "doc" | "xls";
-
-const DOCUMENT_TYPE_ALIASES: Record<string, string[]> = {
-  SCH: ["schemat", "rozwiniecie", "rozwinięcia", "rozwiniecia"],
-  ROG: ["rzut", "rzut ogolny", "rzut ogólny"],
-  RFU: ["fundament", "fundamentow", "fundamentów"],
-  RPO: ["posadzka", "posadzek"],
-  RSU: ["sufit", "sufitow", "sufitów"],
-  PRO: ["projekt"],
-  OPP: ["opis"],
-  OPZ: ["opis pzt"],
-  PZT: ["pzt"],
-  PRF: ["profil"],
-  MAP: ["mapa"],
-  MOD: ["model"],
-  VIS: ["wizualizacja", "wizual"],
-  STT: ["strona tytulowa", "strona tytułowa", "tytulowa", "tytułowa"],
-  ZSA: ["spis arkuszy"],
-  ZSD: ["zestawienie drzwi", "stolarka drzwiowa", "drzwi"],
-  ZSO: ["zestawienie okien", "stolarka okienna", "okna", "okiennej"],
-  ZST: ["zestawienie"],
-  ZSW: ["witryny", "zestawienie witryn"],
-  ZJA: ["zjazd", "projekt zjazdu"],
-};
-
-const LEVEL_ALIASES: Record<string, string[]> = {
-  P0: ["parter"],
-  P1: ["pietro 1", "piętro 1", "1 pietro", "1 piętro", "p1"],
-  P2: ["pietro 2", "piętro 2", "2 pietro", "2 piętro", "p2"],
-  D0: ["dach", "d0"],
-  B1: ["poziom -1", "kondygnacja podziemna 1", "b1", "piwnica 1"],
-  B2: ["poziom -2", "kondygnacja podziemna 2", "b2", "piwnica 2"],
-  M0: ["polpietro parter", "półpiętro parter", "m0"],
-  M1: ["polpietro 1", "półpiętro 1", "m1"],
-};
-
-const PHASE_ALIASES: Record<string, string[]> = {
-  PB: ["projekt budowlany", "projekt arch-bud", "projekt architektoniczno-budowlany", "pzt"],
-  PT: ["projekt techn", "projekt techniczny"],
-  PW: ["projekt wykonawczy"],
-  PK: ["projekt koncepcyjny", "koncepcja"],
-};
-
-function normalize(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("pl");
-}
-
-function tokenize(value: string) {
-  return normalize(value)
-    .split(/[^a-z0-9]+/i)
-    .filter(Boolean);
-}
-
-function matchesSearchToken(queryToken: string, searchableToken: string) {
-  if (searchableToken.includes(queryToken)) {
-    return true;
-  }
-
-  if (
-    queryToken.length >= 4 &&
-    searchableToken.length >= 4 &&
-    queryToken.startsWith(searchableToken) &&
-    queryToken.length - searchableToken.length <= 2
-  ) {
-    return true;
-  }
-
-  if (searchableToken.length >= 4 && searchableToken.startsWith(queryToken)) {
-    return true;
-  }
-
-  return false;
-}
-
-function buildOptions(labels: Record<string, string>, aliases: Record<string, string[]> = {}): NamingOption[] {
-  return Object.entries(labels).map(([code, label]) => ({
-    code,
-    label,
-    searchTerms: [code, label, ...(aliases[code] ?? [])],
-  }));
-}
-
-let namingStandards = getNamingStandardSnapshot();
-
-let PHASE_OPTIONS = buildOptions(namingStandards.phases, PHASE_ALIASES);
-let DISCIPLINE_OPTIONS = buildOptions(namingStandards.disciplines);
-let DOCUMENT_TYPE_OPTIONS = buildOptions(namingStandards.documentTypes, DOCUMENT_TYPE_ALIASES);
-let LEVEL_OPTIONS = buildOptions(namingStandards.levels, LEVEL_ALIASES);
-let REVISION_PRESET_OPTIONS = buildRevisionPresetOptions();
-const REVISION_CUSTOM_OPTION_LABEL = "wpisz numer rewizji";
-const REVISION_INPUT_MESSAGE =
-  "Wpisz rewizję w formacie R00-R99 albo W01-W99, np. R21 lub W03. Sam numer, np. 21, zapisze się jako R21.";
-const REVISION_CONCEPT_MESSAGE = "Wersję koncepcji wpisz od W01 do W99. Dla rewizji zerowej użyj R00.";
-const BULK_STATUS_INPUT_MESSAGE = "Wpisz poprawny status: S0, S1, S2 lub A1.";
-let REVISION_OPTIONS = buildRevisionOptions();
-let STATUS_OPTIONS = buildOptions(namingStandards.statuses);
-
-function buildRevisionPresetOptions(): NamingOption[] {
-  return [
-    {
-      code: "R00",
-      label: namingStandards.revisions.R00 ?? 'R00 - rewizja "zerowa" (domyślna)',
-      searchTerms: ["R00", namingStandards.revisions.R00 ?? 'R00 - rewizja "zerowa" (domyślna)'],
-    },
-    {
-      code: "W01",
-      label: namingStandards.revisions.W01 ?? "W01 - pierwsza wersja koncepcji (domyślna)",
-      searchTerms: ["W01", namingStandards.revisions.W01 ?? "W01 - pierwsza wersja koncepcji (domyślna)"],
-    },
-  ];
-}
-
-function buildRevisionOptions(): NamingOption[] {
-  const options: NamingOption[] = [];
-
-  for (let index = 0; index <= 99; index += 1) {
-    const code = `R${String(index).padStart(2, "0")}`;
-    const preset = REVISION_PRESET_OPTIONS.find((option) => option.code === code);
-    const mappedLabel = namingStandards.revisions[code];
-    options.push({
-      code,
-      label: mappedLabel ?? preset?.label ?? code,
-      searchTerms: [code, mappedLabel ?? preset?.label ?? code],
-    });
-  }
-
-  for (let index = 1; index <= 99; index += 1) {
-    const code = `W${String(index).padStart(2, "0")}`;
-    const preset = REVISION_PRESET_OPTIONS.find((option) => option.code === code);
-    const mappedLabel = namingStandards.revisions[code];
-    options.push({
-      code,
-      label: mappedLabel ?? preset?.label ?? code,
-      searchTerms: [code, mappedLabel ?? preset?.label ?? code],
-    });
-  }
-
-  return options;
-}
-
-function refreshNamingStandardCaches() {
-  namingStandards = getNamingStandardSnapshot();
-  PHASE_OPTIONS = buildOptions(namingStandards.phases, PHASE_ALIASES);
-  DISCIPLINE_OPTIONS = buildOptions(namingStandards.disciplines);
-  DOCUMENT_TYPE_OPTIONS = buildOptions(namingStandards.documentTypes, DOCUMENT_TYPE_ALIASES);
-  LEVEL_OPTIONS = buildOptions(namingStandards.levels, LEVEL_ALIASES);
-  REVISION_PRESET_OPTIONS = buildRevisionPresetOptions();
-  REVISION_OPTIONS = buildRevisionOptions();
-  STATUS_OPTIONS = buildOptions(namingStandards.statuses);
-}
-
-subscribeNamingStandard(() => {
-  refreshNamingStandardCaches();
-});
-
-function findOptionByCode(options: NamingOption[], code: string) {
-  return options.find((option) => option.code === code) ?? null;
-}
-
-function formatPolishCount(count: number, singular: string, paucal: string, plural: string) {
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-
-  if (count === 1) {
-    return `${count} ${singular}`;
-  }
-
-  if (mod10 >= 2 && mod10 <= 4 && !(mod100 >= 12 && mod100 <= 14)) {
-    return `${count} ${paucal}`;
-  }
-
-  return `${count} ${plural}`;
-}
-
-function areStringArraysEqual(left: string[], right: string[]) {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  return left.every((value, index) => value === right[index]);
-}
-
-function normalizeFileSystemPath(filePath: string) {
-  return filePath.trim().replace(/\//g, "\\").replace(/\\+/g, "\\").toLocaleLowerCase("pl");
-}
-
-function normalizeFileSystemPathList(filePaths: string[]) {
-  return Array.from(
-    new Set(
-      filePaths
-        .filter((filePath) => filePath.trim().length > 0)
-        .map((filePath) => normalizeFileSystemPath(filePath)),
-    ),
-  );
-}
-
-function dedupeRowsBySourcePath(fileRows: NamingFileRow[]) {
-  const seenPaths = new Set<string>();
-
-  return fileRows.filter((row) => {
-    const normalizedSourcePath = normalizeFileSystemPath(row.sourcePath);
-    if (seenPaths.has(normalizedSourcePath)) {
-      return false;
-    }
-
-    seenPaths.add(normalizedSourcePath);
-    return true;
-  });
-}
-
-function getExtensionFilterGroup(extension: string): ExtensionFilterGroup | "" {
-  const normalizedExtension = extension.trim().toLowerCase();
-
-  if (normalizedExtension === ".pdf") {
-    return "pdf";
-  }
-
-  if (normalizedExtension === ".dwg") {
-    return "dwg";
-  }
-
-  if (normalizedExtension === ".doc" || normalizedExtension === ".docx") {
-    return "doc";
-  }
-
-  if (normalizedExtension === ".xls" || normalizedExtension === ".xlsx") {
-    return "xls";
-  }
-
-  return "";
-}
-
-const EXTENSION_FILTER_ICON_MAP: Record<ExtensionFilterGroup, { label: string; icon: string; title: string }> = {
-  pdf: {
-    label: "PDF",
-    icon: pdfIcon,
-    title: "Pokaż pliki PDF",
-  },
-  dwg: {
-    label: "DWG",
-    icon: dwgIcon,
-    title: "Pokaż pliki DWG",
-  },
-  doc: {
-    label: "DOC",
-    icon: wordIcon,
-    title: "Pokaż pliki DOC i DOCX",
-  },
-  xls: {
-    label: "XLS",
-    icon: excelIcon,
-    title: "Pokaż pliki XLS i XLSX",
-  },
-};
-
-function resolveOption(input: string, options: NamingOption[]) {
-  const queryTokens = tokenize(input.trim());
-  if (queryTokens.length === 0) {
-    return null;
-  }
-
-  const exactCodeMatch = options.find((option) => normalize(option.code) === queryTokens.join(""));
-  if (exactCodeMatch) {
-    return exactCodeMatch;
-  }
-
-  const matches = options.filter((option) =>
-    option.searchTerms.some((term) => {
-      const termTokens = tokenize(term);
-      return queryTokens.every((queryToken) =>
-        termTokens.some((termToken) => matchesSearchToken(queryToken, termToken)),
-      );
-    }),
-  );
-
-  return matches.length === 1 ? matches[0] : null;
-}
-
-function inferOptionFromText(input: string, options: NamingOption[]) {
-  const normalizedInput = normalize(input);
-  const inputTokens = tokenize(input);
-  if (normalizedInput.length === 0 || inputTokens.length === 0) {
-    return null;
-  }
-
-  const candidates = options
-    .map((option) => {
-      const score = option.searchTerms.reduce((currentScore, term) => {
-        const normalizedTerm = normalize(term);
-        const termTokens = tokenize(term);
-        const matchesAllTokens =
-          termTokens.length > 0 &&
-          termTokens.every((termToken) =>
-            inputTokens.some(
-              (inputToken) =>
-                matchesSearchToken(termToken, inputToken) || matchesSearchToken(inputToken, termToken),
-            ),
-          );
-
-        if (normalizedInput.includes(normalizedTerm) || matchesAllTokens) {
-          return Math.max(currentScore, normalizedTerm.length);
-        }
-
-        return currentScore;
-      }, 0);
-
-      return { option, score };
-    })
-    .filter((candidate) => candidate.score > 0)
-    .sort((left, right) => right.score - left.score);
-
-  if (candidates.length === 0) {
-    return null;
-  }
-
-  if (candidates.length > 1 && candidates[0].score === candidates[1].score) {
-    return null;
-  }
-
-  return candidates[0].option;
-}
-
-function getSuggestedOptions(input: string, options: NamingOption[]) {
-  const queryTokens = tokenize(input.trim());
-
-  if (queryTokens.length === 0) {
-    return options.slice(0, 8);
-  }
-
-  return options
-    .map((option) => {
-      const score = option.searchTerms.reduce((bestScore, term) => {
-        const termTokens = tokenize(term);
-        const matches =
-          termTokens.length > 0 &&
-          queryTokens.every((queryToken) =>
-            termTokens.some(
-              (termToken) =>
-                matchesSearchToken(queryToken, termToken) || matchesSearchToken(termToken, queryToken),
-            ),
-          );
-
-        if (!matches) {
-          return bestScore;
-        }
-
-        return Math.max(bestScore, normalize(term).length);
-      }, 0);
-
-      return { option, score };
-    })
-    .filter((candidate) => candidate.score > 0)
-    .sort((left, right) => {
-      if (right.score !== left.score) {
-        return right.score - left.score;
-      }
-
-      return left.option.label.localeCompare(right.option.label, "pl");
-    })
-    .slice(0, 8)
-    .map((candidate) => candidate.option);
-}
-
-function extractProjectNumber(projectName: string) {
-  const match = /^(\d{5})/.exec(projectName);
-  return match ? match[1] : "";
-}
-
-function isProjectNumberValid(projectNumber: string) {
-  return /^\d{5}$/.test(projectNumber.trim());
-}
-
-function isRevisionCodeValid(revision: string) {
-  return /^R\d{2}$/.test(revision) || /^W\d{2}$/.test(revision) && revision !== "W00";
-}
-
-function normalizeRevisionInput(input: string) {
-  const trimmed = input.trim().toUpperCase();
-  if (!trimmed) {
-    return null;
-  }
-
-  const compact = trimmed.replace(/\s+/g, "");
-  if (/^[RW]\d{2}$/.test(compact) && isRevisionCodeValid(compact)) {
-    return compact;
-  }
-
-  const numberMatch = /^(R|W)?(\d{1,2})(?:\s*-\s*.*)?$/.exec(trimmed);
-  if (!numberMatch) {
-    return null;
-  }
-
-  const prefix = numberMatch[1] ?? "R";
-  const normalized = `${prefix}${numberMatch[2].padStart(2, "0")}`;
-  return isRevisionCodeValid(normalized) ? normalized : null;
-}
-
-function getRevisionValidationMessage(input: string) {
-  const trimmed = input.trim().toUpperCase();
-
-  if (trimmed.startsWith("W") && /^W0*$/.test(trimmed.replace(/\s+/g, ""))) {
-    return REVISION_CONCEPT_MESSAGE;
-  }
-
-  return REVISION_INPUT_MESSAGE;
-}
-
-function isRevisionValidationMessage(message: string) {
-  return message === REVISION_INPUT_MESSAGE || message === REVISION_CONCEPT_MESSAGE;
-}
-
-function isRevisionPartialInputAllowed(input: string) {
-  return /^(?:|[RW]|[RW]?\d{0,2}|[RW]\d{0,2})$/.test(input);
-}
-
-function isDrawingNumberValidForDiscipline(disciplineCode: string, drawingNumber: string) {
-  const disciplinePrefix = disciplineCode?.[0];
-  const drawingPrefix = drawingNumber?.[0];
-
-  if (!disciplinePrefix || !drawingPrefix) {
-    return false;
-  }
-
-  return drawingPrefix === "X" || drawingPrefix === disciplinePrefix;
-}
-
-function parseStandardizedFileName(fileName: string): ParsedStandardName | null {
-  const extensionStart = fileName.lastIndexOf(".");
-  if (extensionStart === -1) {
-    return null;
-  }
-
-  const baseName = fileName.slice(0, extensionStart);
-  const segments = baseName.split("-").map((segment) => segment.trim().toUpperCase());
-
-  if (segments.length !== 8) {
-    return null;
-  }
-
-  const [projectNumber, phase, disciplineCode, documentType, level, drawingNumber, revision, status] = segments;
-
-  if (!/^\d{5}$/.test(projectNumber)) {
-    return null;
-  }
-
-  if (!findOptionByCode(PHASE_OPTIONS, phase)) {
-    return null;
-  }
-
-  if (!findOptionByCode(DISCIPLINE_OPTIONS, disciplineCode)) {
-    return null;
-  }
-
-  if (!findOptionByCode(DOCUMENT_TYPE_OPTIONS, documentType)) {
-    return null;
-  }
-
-  if (!findOptionByCode(LEVEL_OPTIONS, level)) {
-    return null;
-  }
-
-  if (!/^[A-Z]\d{2}$/.test(drawingNumber)) {
-    return null;
-  }
-
-  if (!isRevisionCodeValid(revision) || !findOptionByCode(STATUS_OPTIONS, status)) {
-    return null;
-  }
-
-  return {
-    projectNumber,
-    phase,
-    disciplineCode,
-    documentType,
-    level,
-    drawingNumber,
-    revision,
-    status,
-  };
-}
-
-function extractBaseName(fileName: string) {
-  const extensionStart = fileName.lastIndexOf(".");
-  return extensionStart === -1 ? fileName : fileName.slice(0, extensionStart);
-}
-
-function inferDrawingNumber(baseName: string, disciplineCode?: string) {
-  const matches = Array.from(baseName.toUpperCase().matchAll(/(^|[^A-Z0-9])([A-Z]\d{2})(?=[^A-Z0-9]|$)/g));
-  if (matches.length === 0) {
-    return "";
-  }
-
-  if (!disciplineCode) {
-    return matches[0]?.[2] ?? "";
-  }
-
-  const disciplinePrefix = disciplineCode[0];
-  const matchingToken = matches.find((match) => {
-    const drawingNumber = match[2] ?? "";
-    return drawingNumber.startsWith("X") || drawingNumber.startsWith(disciplinePrefix);
-  });
-
-  return matchingToken?.[2] ?? "";
-}
-
-function inferRevision(baseName: string) {
-  const matches = Array.from(baseName.toUpperCase().matchAll(/(^|[^A-Z0-9])([RW]\d{2})(?=[^A-Z0-9]|$)/g));
-  const validMatch = matches.map((match) => match[2] ?? "").filter((match) => isRevisionCodeValid(match)).at(-1);
-  return validMatch ?? "";
-}
-
-function inferOptionCode(baseName: string, options: NamingOption[]) {
-  const matches = Array.from(
-    baseName.toUpperCase().matchAll(/(^|[^A-Z0-9])([A-Z][A-Z0-9]{1,3})(?=[^A-Z0-9]|$)/g),
-  );
-
-  for (let index = matches.length - 1; index >= 0; index -= 1) {
-    const code = matches[index]?.[2] ?? "";
-    if (findOptionByCode(options, code)) {
-      return code;
-    }
-  }
-
-  return inferOptionFromText(baseName, options)?.code ?? "";
-}
-
-function getRevisionFromFileName(fileName: string) {
-  const parsed = parseStandardizedFileName(fileName);
-  if (parsed?.revision) {
-    return parsed.revision;
-  }
-
-  return inferRevision(extractBaseName(fileName));
-}
-
-function getStatusFromFileName(fileName: string) {
-  const parsed = parseStandardizedFileName(fileName);
-  if (parsed?.status) {
-    return parsed.status;
-  }
-
-  return inferOptionCode(extractBaseName(fileName), STATUS_OPTIONS);
-}
-
-function buildInitialRow(file: NamingFolderFile, defaultRevision: string, defaultStatus: string): NamingFileRow {
-  const parsed = parseStandardizedFileName(file.fileName);
-  const inferredRevision = getRevisionFromFileName(file.fileName);
-  const inferredStatus = getStatusFromFileName(file.fileName);
-
-  return {
-    id: file.id,
-    sourcePath: file.absolutePath,
-    fileName: file.fileName,
-    relativePath: file.relativePath,
-    extension: file.extension,
-    documentType: parsed?.documentType ?? inferOptionFromText(file.baseName, DOCUMENT_TYPE_OPTIONS)?.code ?? "",
-    level: parsed?.level ?? inferOptionFromText(file.baseName, LEVEL_OPTIONS)?.code ?? "",
-    drawingNumber: parsed?.drawingNumber ?? inferDrawingNumber(file.baseName),
-    drawingNumberLocked: false,
-    revision: defaultRevision || inferredRevision,
-    status: defaultStatus || inferredStatus,
-  };
-}
-
-function mergeRowWithLatestFile(existingRow: NamingFileRow, file: NamingFolderFile): NamingFileRow {
-  return {
-    ...existingRow,
-    sourcePath: file.absolutePath,
-    fileName: file.fileName,
-    relativePath: file.relativePath,
-    extension: file.extension,
-  };
-}
-
-function buildTargetFileName(row: NamingFileRow, session: ResolvedSession | null) {
-  if (!session || !row.documentType || !row.level || !row.drawingNumber || !row.revision || !row.status) {
-    return "";
-  }
-
-  return [
-    session.projectNumber,
-    session.phaseCode,
-    session.disciplineCode,
-    row.documentType,
-    row.level,
-    row.drawingNumber,
-    row.revision,
-    row.status,
-  ].join("-") + row.extension;
-}
-
-function joinWindowsPath(folderPath: string, fileName: string) {
-  return `${folderPath.replace(/[\\/]+$/, "")}\\${fileName}`;
-}
-
-function buildDrawingConflictKey(session: ResolvedSession, row: Pick<NamingFileRow, "drawingNumber" | "revision" | "status">) {
-  return [
-    session.projectNumber,
-    session.phaseCode,
-    session.disciplineCode,
-    row.drawingNumber,
-    row.revision,
-    row.status,
-  ].join("|");
-}
-
-function buildTargetIdentityKey(
-  session: ResolvedSession,
-  row: Pick<NamingFileRow, "documentType" | "level" | "drawingNumber" | "revision" | "status" | "extension">,
-) {
-  return [
-    session.projectNumber,
-    session.phaseCode,
-    session.disciplineCode,
-    row.documentType,
-    row.level,
-    row.drawingNumber,
-    row.revision,
-    row.status,
-    row.extension.toLowerCase(),
-  ].join("|");
-}
-
-function buildDrawingContextKey(session: ResolvedSession, row: Pick<NamingFileRow, "revision" | "status">) {
-  return [session.projectNumber, session.phaseCode, session.disciplineCode, row.revision, row.status].join("|");
-}
-
-function getNextDrawingNumber(prefix: string, usedNumbers: Set<string>) {
-  for (let index = 1; index <= 99; index += 1) {
-    const candidate = `${prefix}${String(index).padStart(2, "0")}`;
-    if (!usedNumbers.has(candidate)) {
-      return candidate;
-    }
-  }
-
-  return "";
-}
-
-function formatDrawingNumber(prefix: string, index: number) {
-  if (index < 1 || index > 99) {
-    return "";
-  }
-
-  return `${prefix}${String(index).padStart(2, "0")}`;
-}
-
-function extractFileNameFromInput(input: string) {
-  return input.trim().split(/[\\/]/).pop()?.trim() ?? "";
-}
-
 export function NamingView({
   selectedProjectName,
+  namingStandardVersion: projectNamingStandardVersion,
   refreshWorkingFolderRequestToken,
   undoLastOperationRequestToken,
   onHeroMenuStateChange,
 }: NamingViewProps) {
-  const namingStandardVersion = useNamingStandardVersion();
+  const namingStandardConfigVersion = useNamingStandardVersion();
+  const effectiveNamingStandardVersion = projectNamingStandardVersion ?? 4;
   const initialDraftRef = useRef<NamingViewDraft | null>(null);
   const defaultRevisionInputRef = useRef<HTMLInputElement | null>(null);
   const handledRefreshRequestTokenRef = useRef(0);
@@ -865,18 +153,18 @@ export function NamingView({
   const [highlightedPhaseIndex, setHighlightedPhaseIndex] = useState(-1);
   const [highlightedDisciplineIndex, setHighlightedDisciplineIndex] = useState(-1);
 
-  const phaseMatch = useMemo(() => resolveOption(phaseInput, PHASE_OPTIONS), [namingStandardVersion, phaseInput]);
+  const phaseMatch = useMemo(() => resolveOption(phaseInput, PHASE_OPTIONS), [namingStandardConfigVersion, phaseInput]);
   const disciplineMatch = useMemo(
     () => resolveOption(disciplineInput, DISCIPLINE_OPTIONS),
-    [disciplineInput, namingStandardVersion],
+    [disciplineInput, namingStandardConfigVersion],
   );
   const phaseSuggestions = useMemo(
     () => getSuggestedOptions(phaseInput, PHASE_OPTIONS),
-    [namingStandardVersion, phaseInput],
+    [namingStandardConfigVersion, phaseInput],
   );
   const disciplineSuggestions = useMemo(
     () => getSuggestedOptions(disciplineInput, DISCIPLINE_OPTIONS),
-    [disciplineInput, namingStandardVersion],
+    [disciplineInput, namingStandardConfigVersion],
   );
 
   const resolvedSession = useMemo<ResolvedSession | null>(() => {
@@ -1599,26 +887,6 @@ export function NamingView({
     toggleRowSelection(rowId);
   }
 
-  function toggleAllRows() {
-    if (rows.length === 0) {
-      return;
-    }
-
-    const nextIgnoredRows = [...ignoredRows, ...rows];
-    setHasFileListChanges(true);
-    setIgnoredRows(nextIgnoredRows);
-    setRows([]);
-    setSelectedRowIds([]);
-    setCopyingRowIds([]);
-    setBatchWarningRowIds([]);
-    setBatchWarningIncludedRowIds([]);
-    setOverwriteConfirmRowId(null);
-    closeCustomNameDialog();
-    setDraggedRowId(null);
-    setDragOverRowId(null);
-    setIsIgnoredSectionCollapsed(false);
-  }
-
   function toggleVisibleRows(visibleRowIds: string[]) {
     if (visibleRowIds.length === 0) {
       return;
@@ -1757,6 +1025,7 @@ export function NamingView({
           parsed.projectNumber,
           parsed.phase,
           parsed.disciplineCode,
+          parsed.namingStandardVersion === 4 ? parsed.buildingDesignation ?? "" : "",
           parsed.drawingNumber,
           parsed.revision,
           parsed.status,
@@ -1771,6 +1040,7 @@ export function NamingView({
           parsed.phase,
           parsed.disciplineCode,
           parsed.documentType,
+          parsed.namingStandardVersion === 4 ? parsed.buildingDesignation ?? "" : "",
           parsed.level,
           parsed.drawingNumber,
           parsed.revision,
@@ -1781,13 +1051,13 @@ export function NamingView({
     });
 
     return { keys, identityKeys };
-  }, [namingStandardVersion, targetFiles]);
+  }, [namingStandardConfigVersion, targetFiles]);
 
   const copiedTargetPathSet = useMemo(() => new Set(copiedTargetPaths), [copiedTargetPaths]);
 
   const evaluatedRows = useMemo<EvaluatedRow[]>(() => {
     const draftRows = rows.map((row) => {
-      const targetFileName = buildTargetFileName(row, resolvedSession);
+      const targetFileName = buildTargetFileName(row, resolvedSession, effectiveNamingStandardVersion);
       const targetPath = targetFolder && targetFileName ? joinWindowsPath(targetFolder, targetFileName) : "";
 
       return {
@@ -1807,7 +1077,7 @@ export function NamingView({
       }
 
       if (resolvedSession && draft.row.drawingNumber && draft.row.revision && draft.row.status) {
-        const drawingKey = buildDrawingConflictKey(resolvedSession, draft.row);
+        const drawingKey = buildDrawingConflictKey(resolvedSession, draft.row, effectiveNamingStandardVersion);
         drawingKeyCounts.set(drawingKey, (drawingKeyCounts.get(drawingKey) ?? 0) + 1);
       }
     });
@@ -1833,6 +1103,10 @@ export function NamingView({
 
       if (!draft.row.documentType) {
         details.push("Brakuje typu dokumentu.");
+      }
+
+      if (effectiveNamingStandardVersion === 4 && !isBuildingDesignationValid(draft.row.buildingDesignation)) {
+        details.push("Oznaczenie budynku musi mieć wartość A-I albo X.");
       }
 
       if (!draft.row.level) {
@@ -1870,6 +1144,7 @@ export function NamingView({
         const hasExistingTargetFileByIdentity =
           resolvedSession &&
           draft.row.documentType &&
+          (effectiveNamingStandardVersion === 3 || draft.row.buildingDesignation) &&
           draft.row.level &&
           draft.row.drawingNumber &&
           draft.row.revision &&
@@ -1877,12 +1152,13 @@ export function NamingView({
             ? targetDrawingKeySet.identityKeys.has(
                 buildTargetIdentityKey(resolvedSession, {
                   documentType: draft.row.documentType,
+                  buildingDesignation: draft.row.buildingDesignation,
                   level: draft.row.level,
                   drawingNumber: draft.row.drawingNumber,
                   revision: draft.row.revision,
                   status: draft.row.status,
                   extension: draft.row.extension,
-                }),
+                }, effectiveNamingStandardVersion),
               )
             : false;
         const hasExistingTargetFile = hasExistingTargetFileByName || hasExistingTargetFileByIdentity;
@@ -1897,7 +1173,7 @@ export function NamingView({
       }
 
       if (!isCopied && resolvedSession && draft.row.drawingNumber && draft.row.revision && draft.row.status) {
-        const drawingKey = buildDrawingConflictKey(resolvedSession, draft.row);
+        const drawingKey = buildDrawingConflictKey(resolvedSession, draft.row, effectiveNamingStandardVersion);
         const hasExistingTargetFile = draft.targetFileName
           ? targetFileNameSet.has(normalize(draft.targetFileName))
           : false;
@@ -1942,7 +1218,8 @@ export function NamingView({
   }, [
     copiedTargetPathSet,
     disciplineMatch,
-    namingStandardVersion,
+    effectiveNamingStandardVersion,
+    namingStandardConfigVersion,
     phaseMatch,
     projectNumber,
     resolvedSession,
@@ -2046,6 +1323,10 @@ export function NamingView({
       return null;
     }
 
+    if (parsed.namingStandardVersion !== effectiveNamingStandardVersion) {
+      return null;
+    }
+
     if (!isDrawingNumberValidForDiscipline(parsed.disciplineCode, parsed.drawingNumber)) {
       return null;
     }
@@ -2060,7 +1341,7 @@ export function NamingView({
     }
 
     return { fileName, parsed };
-  }, [customNameDialogRow, customNameInput, namingStandardVersion, resolvedSession]);
+  }, [customNameDialogRow, customNameInput, effectiveNamingStandardVersion, namingStandardConfigVersion, resolvedSession]);
 
   function assignNextDrawingNumber(rowId: string) {
     if (!resolvedSession) {
@@ -2073,7 +1354,7 @@ export function NamingView({
     }
 
     const drawingPrefix = resolvedSession.disciplineCode[0] ?? "X";
-    const contextKey = buildDrawingContextKey(resolvedSession, currentRow);
+    const contextKey = buildDrawingContextKey(resolvedSession, currentRow, effectiveNamingStandardVersion);
     const usedNumbers = new Set<string>();
 
     targetFiles.forEach((file) => {
@@ -2086,6 +1367,7 @@ export function NamingView({
         parsed.projectNumber,
         parsed.phase,
         parsed.disciplineCode,
+        parsed.namingStandardVersion === 4 ? parsed.buildingDesignation ?? "" : "",
         parsed.revision,
         parsed.status,
       ].join("|");
@@ -2096,7 +1378,13 @@ export function NamingView({
     });
 
     rows.forEach((row) => {
-      if (row.id !== rowId && row.revision === currentRow.revision && row.status === currentRow.status && row.drawingNumber) {
+      if (
+        row.id !== rowId &&
+        row.revision === currentRow.revision &&
+        row.status === currentRow.status &&
+        (effectiveNamingStandardVersion === 3 || row.buildingDesignation === currentRow.buildingDesignation) &&
+        row.drawingNumber
+      ) {
         usedNumbers.add(row.drawingNumber);
       }
     });
@@ -2146,7 +1434,14 @@ export function NamingView({
         return;
       }
 
-      const contextKey = [parsed.projectNumber, parsed.phase, parsed.disciplineCode, parsed.revision, parsed.status].join("|");
+      const contextKey = [
+        parsed.projectNumber,
+        parsed.phase,
+        parsed.disciplineCode,
+        parsed.namingStandardVersion === 4 ? parsed.buildingDesignation ?? "" : "",
+        parsed.revision,
+        parsed.status,
+      ].join("|");
       if (!usedNumbersByContext.has(contextKey)) {
         usedNumbersByContext.set(contextKey, new Set());
       }
@@ -2158,7 +1453,7 @@ export function NamingView({
         return;
       }
 
-      const contextKey = buildDrawingContextKey(resolvedSession, row);
+      const contextKey = buildDrawingContextKey(resolvedSession, row, effectiveNamingStandardVersion);
       if (!usedNumbersByContext.has(contextKey)) {
         usedNumbersByContext.set(contextKey, new Set());
       }
@@ -2171,7 +1466,7 @@ export function NamingView({
         return row;
       }
 
-      const contextKey = buildDrawingContextKey(resolvedSession, row);
+      const contextKey = buildDrawingContextKey(resolvedSession, row, effectiveNamingStandardVersion);
       if (!usedNumbersByContext.has(contextKey)) {
         usedNumbersByContext.set(contextKey, new Set());
       }
@@ -3123,6 +2418,7 @@ export function NamingView({
                     </div>
                   </th>
                   <th className="column-type">Typ</th>
+                  {effectiveNamingStandardVersion === 4 ? <th className="column-building">Budynek</th> : null}
                   <th className="column-level">Poziom</th>
                   <th className="column-drawing">Numer arkusza</th>
                   <th className="column-revision">Rewizja</th>
@@ -3233,6 +2529,19 @@ export function NamingView({
                         onChange={(nextValue) => updateRow(evaluatedRow.row.id, { documentType: nextValue })}
                       />
                     </td>
+                    {effectiveNamingStandardVersion === 4 ? (
+                      <td className="column-building">
+                        <InlineCodeSelect
+                          value={evaluatedRow.row.buildingDesignation}
+                          options={BUILDING_DESIGNATION_OPTIONS}
+                          placeholder="A"
+                          menuLabel={`Wybierz oznaczenie budynku dla pliku ${evaluatedRow.row.fileName}`}
+                          onChange={(nextValue) =>
+                            updateRow(evaluatedRow.row.id, { buildingDesignation: nextValue })
+                          }
+                        />
+                      </td>
+                    ) : null}
                     <td className="column-level">
                       <InlineCodeSelect
                         value={evaluatedRow.row.level}

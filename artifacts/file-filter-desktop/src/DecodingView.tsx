@@ -17,7 +17,6 @@ import {
   ALL_PHASE_OPTIONS,
   ALL_STATUS_OPTIONS,
   findOptionByCode,
-  formatPolishCount,
   parseStandardizedFileName,
 } from "./features/naming/domain";
 
@@ -44,6 +43,7 @@ type DecodingFilterKey =
   | "phase"
   | "disciplineCode"
   | "documentType"
+  | "buildingDesignation"
   | "level"
   | "revision"
   | "status";
@@ -125,6 +125,7 @@ const DECODING_FILTER_GROUPS: DecodingFilterGroup[] = [
   { key: "phase", label: "Faza" },
   { key: "disciplineCode", label: "Branża" },
   { key: "documentType", label: "Typ" },
+  { key: "buildingDesignation", label: "Budynek" },
   { key: "level", label: "Poziom" },
   { key: "revision", label: "Rewizja" },
   { key: "status", label: "Status" },
@@ -135,6 +136,7 @@ const INITIAL_DECODING_FILTERS: DecodingFilterMap = {
   phase: [],
   disciplineCode: [],
   documentType: [],
+  buildingDesignation: [],
   level: [],
   revision: [],
   status: [],
@@ -145,6 +147,7 @@ const DECODING_TEMPLATE_FIELD_OPTIONS: Array<{ key: DecodingTemplateSystemFieldK
   { key: "phase", label: "Faza" },
   { key: "discipline", label: "Branża" },
   { key: "type", label: "Typ" },
+  { key: "building", label: "Budynek" },
   { key: "level", label: "Poziom" },
   { key: "number", label: "Numer rysunku" },
   { key: "revision", label: "Rewizja" },
@@ -157,6 +160,7 @@ const TEMPLATE_SYSTEM_FIELD_LABELS: Record<DecodingTemplateSystemFieldKey, strin
   phase: "Faza",
   discipline: "Branża",
   type: "Typ",
+  building: "Budynek",
   level: "Poziom",
   number: "Numer rysunku",
   revision: "Rewizja",
@@ -178,6 +182,7 @@ const TEMPLATE_SYSTEM_FIELD_PREVIEW_VALUES: Record<DecodingTemplateSystemFieldKe
   phase: "projekt techniczny",
   discipline: "architektura",
   type: "przekrój",
+  building: "budynek A",
   level: "parteru",
   number: "A05",
   revision: "R00",
@@ -324,7 +329,13 @@ function getRecognitionLabel(parsed: ParsedStandardName | null) {
     return "Nierozpoznane";
   }
 
-  const found = [parsed.projectNumber, parsed.documentType, parsed.level, parsed.drawingNumber].filter(Boolean).length;
+  const found = [
+    parsed.projectNumber,
+    parsed.documentType,
+    parsed.buildingDesignation,
+    parsed.level,
+    parsed.drawingNumber,
+  ].filter(Boolean).length;
   if (found >= 4) {
     return "Gotowe";
   }
@@ -351,6 +362,7 @@ function buildRecognitionSummary(parsed: ParsedStandardName | null, dictionary: 
         ? getDictionaryValue(dictionary, "documentTypes", parsed.documentType) ||
         stripCodePrefix(findOptionByCode(ALL_DOCUMENT_TYPE_OPTIONS, parsed.documentType)?.label ?? parsed.documentType)
       : "",
+    parsed.buildingDesignation ? `Budynek ${parsed.buildingDesignation}` : "",
     parsed.level
         ? getDictionaryValue(dictionary, "levels", parsed.level) ||
         stripCodePrefix(findOptionByCode(ALL_LEVEL_OPTIONS, parsed.level)?.label ?? parsed.level)
@@ -376,6 +388,7 @@ function buildBaseSuggestedName(
   const dictionaryProjectLabel = getDictionaryValue(dictionary, "projects", projectCode);
   const projectLabel = dictionaryProjectLabel || buildProjectLabel(source, parsed);
   const typePhrase = getTypePhrase(parsed?.documentType, dictionary);
+  const buildingPhrase = parsed?.buildingDesignation ? `budynek ${parsed.buildingDesignation}` : "";
   const levelPhrase = getLevelPhrase(parsed?.level, dictionary);
   const phasePhrase = parsed?.phase
     ? getDictionaryValue(dictionary, "phases", parsed.phase) ||
@@ -394,6 +407,7 @@ function buildBaseSuggestedName(
     phase: phasePhrase,
     discipline: disciplinePhrase,
     type: typePhrase,
+    building: buildingPhrase,
     level: levelPhrase,
     number: parsed?.drawingNumber ?? "",
     revision: revisionPhrase,
@@ -480,6 +494,8 @@ function getDecodingFilterValue(row: SessionRow, key: DecodingFilterKey) {
       return row.parsed?.disciplineCode || "";
     case "documentType":
       return row.parsed?.documentType || "";
+    case "buildingDesignation":
+      return row.parsed?.buildingDesignation || "";
     case "level":
       return row.parsed?.level || "";
     case "revision":
@@ -510,6 +526,10 @@ function getDecodingFilterLabel(key: DecodingFilterKey, value: string) {
 
   if (key === "documentType") {
     return stripCodePrefix(findOptionByCode(ALL_DOCUMENT_TYPE_OPTIONS, value)?.label ?? value);
+  }
+
+  if (key === "buildingDesignation") {
+    return value === "X" ? "X - wiele budynków" : `Budynek ${value}`;
   }
 
   if (key === "level") {

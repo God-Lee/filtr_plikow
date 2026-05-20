@@ -80,6 +80,19 @@ export let ALL_DOCUMENT_TYPE_OPTIONS = buildOptions(allNamingStandards.documentT
 export let ALL_LEVEL_OPTIONS = buildOptions(allNamingStandards.levels, LEVEL_ALIASES);
 export let ALL_STATUS_OPTIONS = buildOptions(allNamingStandards.statuses);
 
+export const BUILDING_DESIGNATION_OPTIONS: NamingOption[] = [
+  ...Array.from("ABCDEFGHI", (code) => ({
+    code,
+    label: code === "A" ? "A - budynek domyślny" : `${code} - budynek ${code}`,
+    searchTerms: [code, `budynek ${code}`],
+  })),
+  {
+    code: "X",
+    label: "X - wiele budynków",
+    searchTerms: ["X", "wiele budynków", "wiele budynkow"],
+  },
+];
+
 export const EXTENSION_FILTER_ICON_MAP: Record<
   ExtensionFilterGroup,
   { icon: string; label: string; title: string }
@@ -417,6 +430,10 @@ export function isDrawingNumberValidForDiscipline(disciplineCode: string, drawin
   return drawingPrefix === "X" || drawingPrefix === disciplinePrefix;
 }
 
+export function isBuildingDesignationValid(buildingDesignation: string | null | undefined) {
+  return /^(?:[A-I]|X)$/.test(buildingDesignation ?? "");
+}
+
 export function parseStandardizedFileName(fileName: string): ParsedStandardName | null {
   const extensionStart = fileName.lastIndexOf(".");
   if (extensionStart === -1) {
@@ -426,11 +443,27 @@ export function parseStandardizedFileName(fileName: string): ParsedStandardName 
   const baseName = fileName.slice(0, extensionStart);
   const segments = baseName.split("-").map((segment) => segment.trim().toUpperCase());
 
-  if (segments.length !== 8) {
+  if (segments.length !== 8 && segments.length !== 9) {
     return null;
   }
 
-  const [projectNumber, phase, disciplineCode, documentType, level, drawingNumber, revision, status] = segments;
+  const isVersion4 = segments.length === 9;
+  const [
+    projectNumber,
+    phase,
+    disciplineCode,
+    documentType,
+    maybeBuildingDesignation,
+    maybeLevel,
+    maybeDrawingNumber,
+    maybeRevision,
+    maybeStatus,
+  ] = segments;
+  const buildingDesignation = isVersion4 ? maybeBuildingDesignation : null;
+  const level = isVersion4 ? maybeLevel : maybeBuildingDesignation;
+  const drawingNumber = isVersion4 ? maybeDrawingNumber : maybeLevel;
+  const revision = isVersion4 ? maybeRevision : maybeDrawingNumber;
+  const status = isVersion4 ? maybeStatus : maybeRevision;
 
   if (!/^\d{5}$/.test(projectNumber)) {
     return null;
@@ -448,6 +481,10 @@ export function parseStandardizedFileName(fileName: string): ParsedStandardName 
     return null;
   }
 
+  if (isVersion4 && !isBuildingDesignationValid(buildingDesignation)) {
+    return null;
+  }
+
   if (!findOptionByCode(ALL_LEVEL_OPTIONS, level)) {
     return null;
   }
@@ -461,10 +498,12 @@ export function parseStandardizedFileName(fileName: string): ParsedStandardName 
   }
 
   return {
+    namingStandardVersion: isVersion4 ? 4 : 3,
     projectNumber,
     phase,
     disciplineCode,
     documentType,
+    buildingDesignation,
     level,
     drawingNumber,
     revision,
@@ -547,6 +586,7 @@ export function buildInitialRow(file: NamingFolderFile, defaultRevision: string,
     relativePath: file.relativePath,
     extension: file.extension,
     documentType: parsed?.documentType ?? inferOptionFromText(file.baseName, DOCUMENT_TYPE_OPTIONS)?.code ?? "",
+    buildingDesignation: parsed?.buildingDesignation ?? "A",
     level: parsed?.level ?? inferOptionFromText(file.baseName, LEVEL_OPTIONS)?.code ?? "",
     drawingNumber: parsed?.drawingNumber ?? inferDrawingNumber(file.baseName),
     drawingNumberLocked: false,
@@ -565,33 +605,47 @@ export function mergeRowWithLatestFile(existingRow: NamingFileRow, file: NamingF
   };
 }
 
-export function buildTargetFileName(row: NamingFileRow, session: ResolvedSession | null) {
-  if (!session || !row.documentType || !row.level || !row.drawingNumber || !row.revision || !row.status) {
+export function buildTargetFileName(row: NamingFileRow, session: ResolvedSession | null, namingStandardVersion = 4) {
+  if (
+    !session ||
+    !row.documentType ||
+    (namingStandardVersion === 4 && !row.buildingDesignation) ||
+    !row.level ||
+    !row.drawingNumber ||
+    !row.revision ||
+    !row.status
+  ) {
     return "";
   }
 
-  return [
+  const segments = [
     session.projectNumber,
     session.phaseCode,
     session.disciplineCode,
     row.documentType,
-    row.level,
-    row.drawingNumber,
-    row.revision,
-    row.status,
-  ].join("-") + row.extension;
+  ];
+
+  if (namingStandardVersion === 4) {
+    segments.push(row.buildingDesignation);
+  }
+
+  segments.push(row.level, row.drawingNumber, row.revision, row.status);
+
+  return segments.join("-") + row.extension;
 }
 
 export { joinWindowsPath };
 
 export function buildDrawingConflictKey(
   session: ResolvedSession,
-  row: Pick<NamingFileRow, "drawingNumber" | "revision" | "status">,
+  row: Pick<NamingFileRow, "buildingDesignation" | "drawingNumber" | "revision" | "status">,
+  namingStandardVersion = 4,
 ) {
   return [
     session.projectNumber,
     session.phaseCode,
     session.disciplineCode,
+    namingStandardVersion === 4 ? row.buildingDesignation : "",
     row.drawingNumber,
     row.revision,
     row.status,
@@ -600,26 +654,41 @@ export function buildDrawingConflictKey(
 
 export function buildTargetIdentityKey(
   session: ResolvedSession,
-  row: Pick<NamingFileRow, "documentType" | "level" | "drawingNumber" | "revision" | "status" | "extension">,
+  row: Pick<
+    NamingFileRow,
+    "documentType" | "buildingDesignation" | "level" | "drawingNumber" | "revision" | "status" | "extension"
+  >,
+  namingStandardVersion = 4,
+) {
+  const segments = [
+    session.projectNumber,
+    session.phaseCode,
+    session.disciplineCode,
+    row.documentType,
+  ];
+
+  if (namingStandardVersion === 4) {
+    segments.push(row.buildingDesignation);
+  }
+
+  segments.push(row.level, row.drawingNumber, row.revision, row.status, row.extension.toLowerCase());
+
+  return segments.join("|");
+}
+
+export function buildDrawingContextKey(
+  session: ResolvedSession,
+  row: Pick<NamingFileRow, "buildingDesignation" | "revision" | "status">,
+  namingStandardVersion = 4,
 ) {
   return [
     session.projectNumber,
     session.phaseCode,
     session.disciplineCode,
-    row.documentType,
-    row.level,
-    row.drawingNumber,
+    namingStandardVersion === 4 ? row.buildingDesignation : "",
     row.revision,
     row.status,
-    row.extension.toLowerCase(),
   ].join("|");
-}
-
-export function buildDrawingContextKey(
-  session: ResolvedSession,
-  row: Pick<NamingFileRow, "revision" | "status">,
-) {
-  return [session.projectNumber, session.phaseCode, session.disciplineCode, row.revision, row.status].join("|");
 }
 
 export function getNextDrawingNumber(prefix: string, usedNumbers: Set<string>) {

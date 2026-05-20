@@ -31,6 +31,7 @@ type InstructionKey =
   | "phase"
   | "discipline"
   | "documentType"
+  | "buildingDesignation"
   | "level"
   | "drawingNumber"
   | "revision"
@@ -119,30 +120,30 @@ const SECTION_META: Record<CodeSectionKey, StandardSectionMeta> = {
   },
   levels: {
     label: "Poziom",
-    eyebrow: "Segment 5",
+    eyebrow: "Segment 6",
     title: "Poziom",
     description:
       "Poziom wskazuje kondygnację, dach albo wariant wielopoziomowy, dzięki czemu łatwiej filtrować rysunki.",
     helper: "Jeśli poziom nie ma znaczenia, standard przewiduje też kod ogólny.",
-    segmentNumber: 5,
+    segmentNumber: 6,
   },
   revisions: {
     label: "Rewizja",
-    eyebrow: "Segment 7",
+    eyebrow: "Segment 8",
     title: "Rewizja i wersja koncepcji",
     description:
       "Aplikacja rozpoznaje rewizje R00-R99 oraz wersje koncepcyjne W01-W99.",
     helper: "Na tym etapie moduł tylko objaśnia standard, bez edycji kodów.",
-    segmentNumber: 7,
+    segmentNumber: 8,
   },
   statuses: {
     label: "Status",
-    eyebrow: "Segment 8",
+    eyebrow: "Segment 9",
     title: "Status pliku",
     description:
       "Status określa, czy plik jest roboczy, wydany do zatwierdzenia czy zatwierdzony do dalszego użycia.",
     helper: "To ostatni segment pełnej nazwy pliku.",
-    segmentNumber: 8,
+    segmentNumber: 9,
   },
 };
 
@@ -192,6 +193,11 @@ const GUIDE_ACCENTS: Record<InstructionKey, { color: string; soft: string; line:
     color: "#228a2d",
     soft: "rgba(34, 138, 45, 0.11)",
     line: "rgba(34, 138, 45, 0.34)",
+  },
+  buildingDesignation: {
+    color: "#0f9f7a",
+    soft: "rgba(15, 159, 122, 0.1)",
+    line: "rgba(15, 159, 122, 0.34)",
   },
   level: {
     color: "#2d84f1",
@@ -328,6 +334,12 @@ function buildGuideSegments(selection: ExampleSelectionMap): SegmentGuideItem[] 
       value: selection.documentTypes,
       description: "Detal, rzut, mapa, przekrój, zestawienie itd.",
       sectionKey: "documentTypes",
+    },
+    {
+      key: "buildingDesignation",
+      title: "Oznaczenie budynku",
+      value: "A",
+      description: "A-I dla pojedynczego budynku albo X, jeśli plik dotyczy wielu budynków.",
     },
     {
       key: "level",
@@ -808,6 +820,10 @@ export function StandardView({ isAdminMode }: StandardViewProps) {
         <div className="panel-header">
           <div>
             <h2>Jak czytać nazwę pliku:</h2>
+            <p className="standard-copy">
+              Aktualny standard V4 zawiera oznaczenie budynku po typie dokumentu. Nazwy V3 bez tego segmentu
+              pozostają obsługiwane dla projektów oznaczonych wersją 3.
+            </p>
           </div>
         </div>
 

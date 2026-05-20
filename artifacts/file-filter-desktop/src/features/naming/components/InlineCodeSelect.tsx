@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import type { NamingOption } from "../../../app/types";
-import { findOptionByCode } from "../domain";
 
 type InlineCodeSelectProps = {
   value: string;
