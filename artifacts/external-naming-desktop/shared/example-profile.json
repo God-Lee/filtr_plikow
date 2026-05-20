@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "profileId": "25144-demo-v4",
+  "projectNumber": "25144",
+  "projectName": "Projekt demonstracyjny",
+  "namingStandardVersion": 4,
+  "allowedValues": {
+    "phases": [
+      { "code": "PT", "label": "Projekt techniczny" },
+      { "code": "PW", "label": "Projekt wykonawczy" }
+    ],
+    "disciplines": [
+      { "code": "AR", "label": "Architektura" },
+      { "code": "KO", "label": "Konstrukcja" }
+    ],
+    "documentTypes": [
+      { "code": "PRO", "label": "Projekt" },
+      { "code": "ROG", "label": "Rzut" },
+      { "code": "CSE", "label": "Przekrój" },
+      { "code": "ELE", "label": "Elewacja" },
+      { "code": "ZST", "label": "Zestawienie" }
+    ],
+    "levels": [
+      { "code": "P0", "label": "Parter" },
+      { "code": "P1", "label": "Piętro 1" },
+      { "code": "D0", "label": "Dach" },
+      { "code": "XX", "label": "Nie dotyczy / wiele poziomów" }
+    ],
+    "statuses": [
+      { "code": "S0", "label": "Plik roboczy" },
+      { "code": "S1", "label": "Do koordynacji" },
+      { "code": "S2", "label": "Do zatwierdzenia" },
+      { "code": "A1", "label": "Zatwierdzone do budowy" }
+    ],
+    "buildings": [
+      { "code": "A", "label": "Budynek A" },
+      { "code": "B", "label": "Budynek B" },
+      { "code": "X", "label": "Wiele budynków" }
+    ]
+  },
+  "defaults": {
+    "phase": "PT",
+    "discipline": "AR",
+    "documentType": "PRO",
+    "building": "A",
+    "level": "P0",
+    "revision": "R00",
+    "status": "S1"
+  }
+}

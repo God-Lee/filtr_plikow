@@ -1,0 +1,33 @@
+{
+  "appId": "pl.ekoinbud.externalnaming",
+  "productName": "Plikonazywacz",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "assets/**/*",
+    "shared/**/*",
+    "package.json"
+  ],
+  "win": {
+    "icon": "assets/app.ico",
+    "signAndEditExecutable": false,
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ]
+  },
+  "nsis": {
+    "artifactName": "Plikonazywacz-Setup-${version}.exe",
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": false,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Plikonazywacz"
+  }
+}
