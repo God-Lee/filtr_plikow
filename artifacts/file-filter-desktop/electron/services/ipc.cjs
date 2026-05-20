@@ -1,6 +1,7 @@
 const { dialog, ipcMain, shell } = require("electron");
 const { copyNamingFiles, listNamingFiles } = require("./naming.cjs");
 const { loadDecodingDictionary } = require("./decoding-config.cjs");
+const { exportProjectProfile } = require("./project-profile.cjs");
 const { listProjects, scanProject } = require("./projects.cjs");
 const { chooseDirectory, exportInvalidFilesReport } = require("./report.cjs");
 const { loadSettings, saveSettings } = require("./settings.cjs");
@@ -67,6 +68,7 @@ function registerIpcHandlers() {
   ipcMain.handle("decoding:getDictionary", async () => loadDecodingDictionary());
   ipcMain.handle("dialog:chooseDirectory", async (_event, title) => chooseDirectory(title));
   ipcMain.handle("report:exportInvalidFiles", async (_event, files) => exportInvalidFilesReport(files));
+  ipcMain.handle("profile:exportProject", async (_event, input) => exportProjectProfile(input));
   ipcMain.handle("naming:listFiles", async (_event, folderPath) => listNamingFiles(folderPath));
   ipcMain.handle("naming:copyFiles", async (_event, items) => copyNamingFiles(items));
   ipcMain.handle("shell:openFile", async (_event, targetPath) => shell.openPath(targetPath));

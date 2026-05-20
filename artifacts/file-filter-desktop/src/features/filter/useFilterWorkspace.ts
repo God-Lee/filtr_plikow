@@ -14,13 +14,13 @@ import type {
   DateFilterValue,
   DecodeSourceFile,
   FilterColumnKey,
+  NamingStandardVersion,
   NoticeTone,
   ScanResult,
   SortConfig,
   SortKey,
 } from "../../app/types";
 import {
-  DEFAULT_VISIBLE_COLUMN_KEYS,
   INITIAL_EXPANDED_GROUPS,
   INITIAL_FILTERS,
   MAX_FAVORITE_PROJECTS,
@@ -31,8 +31,7 @@ import {
   getFilteredFiles,
   getFilteredProjects,
   getFilteredFileSummaryLabel,
-  getShouldHideExtensionFilter,
-  getShouldRemovePdfExtensionOption,
+  getDefaultVisibleColumnKeys,
   getSortedFiles,
   getVisibleFavoriteProjects,
   getVisibleFilterGroups,
@@ -42,18 +41,28 @@ import {
 } from "./domain";
 
 type FilterOptionMap = Record<string, string[]>;
-const VISIBLE_FILTER_COLUMNS_STORAGE_KEY = "file-filter.visibleColumnKeys";
+function getVisibleFilterColumnsStorageKey(namingStandardVersion: NamingStandardVersion) {
+  return `file-filter.visibleColumnKeys.standard-v${namingStandardVersion}`;
+}
+
+function extractProjectNumber(projectName: string) {
+  const match = /^(\d{5})/.exec(projectName);
+  return match ? match[1] : "";
+}
+
 const INITIAL_DATE_FILTERS: DateFilterMap = {
   createdAt: null,
   modifiedAt: null,
 };
 
-function getInitialVisibleColumnKeys() {
+function getInitialVisibleColumnKeys(namingStandardVersion: NamingStandardVersion = 4) {
   try {
-    const rawValue = window.localStorage.getItem(VISIBLE_FILTER_COLUMNS_STORAGE_KEY);
-    return rawValue ? sanitizeVisibleColumnKeys(JSON.parse(rawValue)) : DEFAULT_VISIBLE_COLUMN_KEYS;
+    const rawValue = window.localStorage.getItem(getVisibleFilterColumnsStorageKey(namingStandardVersion));
+    return rawValue
+      ? sanitizeVisibleColumnKeys(JSON.parse(rawValue), namingStandardVersion)
+      : getDefaultVisibleColumnKeys(namingStandardVersion);
   } catch {
-    return DEFAULT_VISIBLE_COLUMN_KEYS;
+    return getDefaultVisibleColumnKeys(namingStandardVersion);
   }
 }
 
@@ -73,6 +82,7 @@ export function useFilterWorkspace() {
   const [reportMessage, setReportMessage] = useState("");
   const [reportMessageType, setReportMessageType] = useState<Exclude<NoticeTone, "muted">>("success");
   const [exportingInvalidReport, setExportingInvalidReport] = useState(false);
+  const [exportingProjectProfile, setExportingProjectProfile] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showInvalidOnly, setShowInvalidOnly] = useState(false);
   const [showValidOnly, setShowValidOnly] = useState(false);
@@ -131,11 +141,15 @@ export function useFilterWorkspace() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(VISIBLE_FILTER_COLUMNS_STORAGE_KEY, JSON.stringify(visibleColumnKeys));
+      const namingStandardVersion = scanResult?.namingStandardVersion ?? 4;
+      window.localStorage.setItem(
+        getVisibleFilterColumnsStorageKey(namingStandardVersion),
+        JSON.stringify(visibleColumnKeys),
+      );
     } catch {
       // Widoczność kolumn nadal działa w bieżącej sesji.
     }
-  }, [visibleColumnKeys]);
+  }, [scanResult?.namingStandardVersion, visibleColumnKeys]);
 
   useEffect(() => {
     if (visibleColumnKeys.includes(sortConfig.key)) {
@@ -145,22 +159,19 @@ export function useFilterWorkspace() {
     setSortConfig({ key: visibleColumnKeys[0] ?? "fileName", direction: "asc" });
   }, [sortConfig.key, visibleColumnKeys]);
 
-  const shouldHideExtensionFilter = getShouldHideExtensionFilter(filters);
-  const shouldRemovePdfExtensionOption = getShouldRemovePdfExtensionOption(filters);
-
   const baseMatchingFiles = useMemo(
     () => filterFilesBySearch(scanResult?.files ?? [], deferredSearchQuery),
     [deferredSearchQuery, namingStandardVersion, scanResult?.files],
   );
 
   const filterOptions = useMemo(
-    () => getFilterOptions(baseMatchingFiles, filters, shouldRemovePdfExtensionOption),
-    [baseMatchingFiles, filters, namingStandardVersion, shouldRemovePdfExtensionOption],
+    () => getFilterOptions(baseMatchingFiles, filters, false),
+    [baseMatchingFiles, filters, namingStandardVersion],
   );
 
   const visibleFilterGroups = useMemo(
-    () => getVisibleFilterGroups(filterOptions, shouldHideExtensionFilter),
-    [filterOptions, shouldHideExtensionFilter],
+    () => getVisibleFilterGroups(filterOptions, false),
+    [filterOptions],
   );
 
   const filteredProjects = useMemo(
@@ -265,8 +276,8 @@ export function useFilterWorkspace() {
   }, [selectedProject]);
 
   useEffect(() => {
-    setFilters((current) => sanitizeSelectedFilters(current, filterOptions, shouldHideExtensionFilter));
-  }, [filterOptions, shouldHideExtensionFilter]);
+    setFilters((current) => sanitizeSelectedFilters(current, filterOptions, false));
+  }, [filterOptions]);
 
   useEffect(() => {
     const availableFileIds = new Set((scanResult?.files ?? []).map((file) => file.id));
@@ -310,6 +321,11 @@ export function useFilterWorkspace() {
         setShowInvalidOnly(false);
         setShowValidOnly(false);
         setShowSelectedOnly(false);
+        setVisibleColumnKeys(
+          result.namingStandardVersion === 3
+            ? getDefaultVisibleColumnKeys(3)
+            : getInitialVisibleColumnKeys(result.namingStandardVersion),
+        );
         setSelectedFileIds((current) => current.filter((fileId) => availableFileIds.has(fileId)));
       });
     } catch (error) {
@@ -393,6 +409,37 @@ export function useFilterWorkspace() {
       setReportMessage(error instanceof Error ? error.message : "Nie udało się wyeksportować raportu.");
     } finally {
       setExportingInvalidReport(false);
+    }
+  }
+
+  async function handleExportProjectProfile() {
+    if (!scanResult) {
+      setReportMessageType("error");
+      setReportMessage("Najpierw wybierz i przeskanuj projekt.");
+      return;
+    }
+
+    setExportingProjectProfile(true);
+    setErrorMessage("");
+
+    try {
+      const result = await fileFilterApi.exportProjectProfile({
+        projectName: scanResult.projectName,
+        projectNumber: extractProjectNumber(scanResult.projectName),
+        namingStandardVersion: scanResult.namingStandardVersion,
+      });
+
+      if (!result.saved) {
+        return;
+      }
+
+      setReportMessageType("success");
+      setReportMessage(`Profil Plikonazywacza zapisano: ${result.profilePath}`);
+    } catch (error) {
+      setReportMessageType("error");
+      setReportMessage(error instanceof Error ? error.message : "Nie udało się wyeksportować profilu projektu.");
+    } finally {
+      setExportingProjectProfile(false);
     }
   }
 
@@ -545,11 +592,13 @@ export function useFilterWorkspace() {
     errorMessage,
     expandedGroups,
     exportingInvalidReport,
+    exportingProjectProfile,
     filteredProjects,
     filterOptions,
     filters,
     handleChooseRoot,
     handleExportInvalidFilesReport,
+    handleExportProjectProfile,
     handleFavoriteToggle,
     handleProjectSelect,
     handleProjectQueryChange,

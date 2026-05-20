@@ -14,9 +14,12 @@ type HeroMenuProps = {
 
 type FilterHeroMenuProps = {
   canExportReport: boolean;
+  canExportProjectProfile: boolean;
   exportLabel: string;
+  exportProjectProfileLabel: string;
   onChooseRoot: () => void;
   onExportReport: () => void;
+  onExportProjectProfile: () => void;
 };
 
 type DecodingHeroMenuProps = {
@@ -92,9 +95,12 @@ function HeroMenu({ expandedAriaLabel, collapsedAriaLabel, items }: HeroMenuProp
 
 export function FilterHeroMenu({
   canExportReport,
+  canExportProjectProfile,
   exportLabel,
+  exportProjectProfileLabel,
   onChooseRoot,
   onExportReport,
+  onExportProjectProfile,
 }: FilterHeroMenuProps) {
   return (
     <HeroMenu
@@ -102,6 +108,11 @@ export function FilterHeroMenu({
       collapsedAriaLabel="Rozwiń menu filtra"
       items={[
         { label: "Wybierz folder źródłowy", onSelect: onChooseRoot },
+        {
+          label: exportProjectProfileLabel,
+          onSelect: onExportProjectProfile,
+          disabled: !canExportProjectProfile,
+        },
         { label: exportLabel, onSelect: onExportReport, disabled: !canExportReport },
       ]}
     />

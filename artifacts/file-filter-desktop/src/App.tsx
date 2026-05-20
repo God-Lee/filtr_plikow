@@ -142,21 +142,22 @@ function AppReady() {
     setActiveView("decoding");
   }
 
-  const hasHeroMenu = true;
-
   return (
     <div className="app-shell">
       <header className="hero-bar">
         <div className="hero-brand">
           <div className="hero-brand-copy">
             <div className="hero-brand-header">
-              <div className="hero-menu-slot" aria-hidden={!hasHeroMenu}>
+              <div className="hero-menu-slot">
                 {activeView === "filter" ? (
                   <FilterHeroMenu
                     canExportReport={Boolean(workspace.scanResult && (workspace.scanResult.invalidCount ?? 0) > 0 && !workspace.exportingInvalidReport)}
+                    canExportProjectProfile={Boolean(workspace.scanResult && !workspace.exportingProjectProfile)}
                     exportLabel={workspace.exportingInvalidReport ? "Eksportowanie raportu..." : "Raport plików"}
+                    exportProjectProfileLabel={workspace.exportingProjectProfile ? "Eksportowanie profilu..." : "Profil dla Plikonazywacza"}
                     onChooseRoot={() => void workspace.handleChooseRoot()}
                     onExportReport={() => void workspace.handleExportInvalidFilesReport()}
+                    onExportProjectProfile={() => void workspace.handleExportProjectProfile()}
                   />
                 ) : activeView === "decoding" ? (
                   <DecodingHeroMenu
@@ -250,6 +251,7 @@ function AppReady() {
           >
             <NamingView
               selectedProjectName={workspace.selectedProject}
+              namingStandardVersion={workspace.scanResult?.namingStandardVersion ?? null}
               refreshWorkingFolderRequestToken={refreshNamingWorkingFolderToken}
               undoLastOperationRequestToken={undoNamingOperationToken}
               onHeroMenuStateChange={setNamingHeroMenuState}

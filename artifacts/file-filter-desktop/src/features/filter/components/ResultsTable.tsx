@@ -31,6 +31,7 @@ const NARROW_COLUMN_MIN_WIDTHS: Partial<Record<FilterColumnKey, number>> = {
   phase: 72,
   disciplineCode: 82,
   documentType: 68,
+  buildingDesignation: 72,
   level: 78,
   drawingNumber: 118,
   revision: 82,
@@ -247,6 +248,8 @@ function renderColumnCell(
       return <td key={columnKey}>{file.parsedSegments?.disciplineCode ?? "-"}</td>;
     case "documentType":
       return <td key={columnKey}>{file.parsedSegments?.documentType ?? "-"}</td>;
+    case "buildingDesignation":
+      return <td key={columnKey}>{file.namingStandardVersion === 4 ? file.parsedSegments?.buildingDesignation ?? "-" : "-"}</td>;
     case "level":
       return <td key={columnKey}>{file.parsedSegments?.level ?? "-"}</td>;
     case "drawingNumber":

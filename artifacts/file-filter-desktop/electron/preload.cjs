@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("fileFilterApi", {
   getDecodingDictionary: () => ipcRenderer.invoke("decoding:getDictionary"),
   chooseDirectory: (title) => ipcRenderer.invoke("dialog:chooseDirectory", title),
   exportInvalidFilesReport: (files) => ipcRenderer.invoke("report:exportInvalidFiles", files),
+  exportProjectProfile: (input) => ipcRenderer.invoke("profile:exportProject", input),
   listNamingFiles: (folderPath) => ipcRenderer.invoke("naming:listFiles", folderPath),
   copyNamingFiles: (items) => ipcRenderer.invoke("naming:copyFiles", items),
   openFile: (targetPath) => ipcRenderer.invoke("shell:openFile", targetPath),

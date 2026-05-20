@@ -5,6 +5,7 @@ import type {
   FileRecord,
   FilterColumnKey,
   FilterGroup,
+  NamingStandardVersion,
   SortConfig,
   SortKey,
 } from "../../app/types";
@@ -47,19 +48,28 @@ export const SORTABLE_COLUMNS: Array<{ key: SortKey; label: string; className?: 
   { key: "phase", label: "Faza" },
   { key: "disciplineCode", label: "Branża" },
   { key: "documentType", label: "Typ" },
+  { key: "buildingDesignation", label: "Budynek" },
   { key: "level", label: "Poziom" },
   { key: "drawingNumber", label: "Nr rysunku" },
   { key: "revision", label: "Rewizja" },
   { key: "status", label: "Status" },
 ];
 
-export const DEFAULT_VISIBLE_COLUMN_KEYS = SORTABLE_COLUMNS.map((column) => column.key);
+export function getDefaultVisibleColumnKeys(
+  namingStandardVersion: NamingStandardVersion = 4,
+): FilterColumnKey[] {
+  const defaultKeys = SORTABLE_COLUMNS.map((column) => column.key);
+  return namingStandardVersion === 3
+    ? defaultKeys.filter((columnKey) => columnKey !== "buildingDesignation")
+    : defaultKeys;
+}
 
 export const FILTER_GROUPS: FilterGroup<FileRecord>[] = [
   { key: "extensionLabel", label: "Typ plików", getValue: (file) => getExtensionFilterLabel(file) },
   { key: "phase", label: "Faza", getValue: (file) => getPhaseFilterLabel(file) },
   { key: "disciplineCode", label: "Branża", getValue: (file) => getDisciplineFilterLabel(file) },
   { key: "documentType", label: "Typ", getValue: (file) => getDocumentTypeFilterLabel(file) },
+  { key: "buildingDesignation", label: "Budynek", getValue: (file) => getBuildingFilterLabel(file) },
   { key: "level", label: "Poziom", getValue: (file) => getLevelFilterLabel(file) },
   { key: "revision", label: "Rewizja", getValue: (file) => getRevisionFilterLabel(file) },
   { key: "status", label: "Status", getValue: (file) => getStatusFilterLabel(file) },
@@ -91,9 +101,14 @@ export function getValidationLabel(file: FileRecord) {
   return file.invalidReason === "Błędna lokalizacja" ? "Błędna lokalizacja" : "Błędna nazwa";
 }
 
-export function sanitizeVisibleColumnKeys(columnKeys: unknown): FilterColumnKey[] {
+export function sanitizeVisibleColumnKeys(
+  columnKeys: unknown,
+  namingStandardVersion: NamingStandardVersion = 4,
+): FilterColumnKey[] {
+  const defaultVisibleColumnKeys = getDefaultVisibleColumnKeys(namingStandardVersion);
+
   if (!Array.isArray(columnKeys)) {
-    return DEFAULT_VISIBLE_COLUMN_KEYS;
+    return defaultVisibleColumnKeys;
   }
 
   const allowedColumnKeys = new Set<SortKey>(SORTABLE_COLUMNS.map((column) => column.key));
@@ -102,7 +117,7 @@ export function sanitizeVisibleColumnKeys(columnKeys: unknown): FilterColumnKey[
       typeof columnKey === "string" && allowedColumnKeys.has(columnKey as SortKey),
   );
 
-  return visibleColumnKeys.length > 0 ? Array.from(new Set(visibleColumnKeys)) : DEFAULT_VISIBLE_COLUMN_KEYS;
+  return visibleColumnKeys.length > 0 ? Array.from(new Set(visibleColumnKeys)) : defaultVisibleColumnKeys;
 }
 
 export function getSortValue(file: FileRecord, sortKey: SortKey) {
@@ -121,6 +136,8 @@ export function getSortValue(file: FileRecord, sortKey: SortKey) {
       return file.parsedSegments?.disciplineCode ?? "";
     case "documentType":
       return file.parsedSegments?.documentType ?? "";
+    case "buildingDesignation":
+      return file.parsedSegments?.buildingDesignation ?? "";
     case "level":
       return file.parsedSegments?.level ?? "";
     case "drawingNumber":
@@ -165,14 +182,6 @@ export function getVisibleFavoriteProjects(projects: string[], favoriteProjects:
     .filter((project) => projects.includes(project))
     .slice(0, MAX_FAVORITE_PROJECTS)
     .map((projectName) => buildFavoriteProjectCard(projectName));
-}
-
-export function getShouldHideExtensionFilter(filters: FilterOptionMap) {
-  return false;
-}
-
-export function getShouldRemovePdfExtensionOption(filters: FilterOptionMap) {
-  return false;
 }
 
 export function filterFilesBySearch(files: FileRecord[], query: string) {
@@ -361,6 +370,14 @@ function getDocumentTypeFilterLabel(file: FileRecord) {
   return getMappedFilterLabel(file.parsedSegments?.documentType, DOCUMENT_TYPE_LABELS);
 }
 
+function getBuildingFilterLabel(file: FileRecord) {
+  if (file.namingStandardVersion === 3) {
+    return "";
+  }
+
+  return file.parsedSegments?.buildingDesignation ?? "Błędnie nazwane";
+}
+
 function getLevelFilterLabel(file: FileRecord) {
   return getMappedFilterLabel(file.parsedSegments?.level, LEVEL_LABELS);
 }
@@ -387,6 +404,7 @@ function getParsedSegmentLabels(file: FileRecord) {
     file.parsedSegments?.documentType
       ? DOCUMENT_TYPE_LABELS[file.parsedSegments.documentType] ?? file.parsedSegments.documentType
       : "",
+    file.parsedSegments?.buildingDesignation ?? "",
     file.parsedSegments?.level ? LEVEL_LABELS[file.parsedSegments.level] ?? file.parsedSegments.level : "",
     file.parsedSegments?.revision
       ? REVISION_LABELS[file.parsedSegments.revision] ?? file.parsedSegments.revision
@@ -413,6 +431,7 @@ function buildFileSearchTokens(file: FileRecord) {
     file.parsedSegments?.phase ?? "",
     file.parsedSegments?.disciplineCode ?? "",
     file.parsedSegments?.documentType ?? "",
+    file.parsedSegments?.buildingDesignation ?? "",
     file.parsedSegments?.level ?? "",
     file.parsedSegments?.drawingNumber ?? "",
     file.parsedSegments?.revision ?? "",
@@ -548,7 +567,12 @@ function sortWithInvalidLast(options: string[], preferredOrder?: string[]) {
 
 function extractOptions(files: FileRecord[], group: FilterGroup<FileRecord>) {
   const values = new Set<string>();
-  files.forEach((file) => values.add(group.getValue(file)));
+  files.forEach((file) => {
+    const value = group.getValue(file);
+    if (value) {
+      values.add(value);
+    }
+  });
 
   const options = Array.from(values);
   if (group.key === "extensionLabel") {
@@ -652,6 +676,10 @@ function extractOptions(files: FileRecord[], group: FilterGroup<FileRecord>) {
       "B2 - Druga kondygnacja podziemna",
       "XX - Nie dotyczy/wiele poziomów",
     ]);
+  }
+
+  if (group.key === "buildingDesignation") {
+    return sortWithInvalidLast(options, ["A", "B", "C", "D", "E", "F", "G", "H", "I", "X"]);
   }
 
   if (group.key === "revision") {

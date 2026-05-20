@@ -1,5 +1,7 @@
 export type AppView = "filter" | "naming" | "decoding" | "standard";
 
+export type NamingStandardVersion = 3 | 4;
+
 export type NamingStandardEntry = {
   label: string;
   active: boolean;
@@ -43,6 +45,7 @@ export type DecodingTemplateSystemFieldKey =
   | "phase"
   | "discipline"
   | "type"
+  | "building"
   | "level"
   | "number"
   | "revision"
@@ -60,18 +63,6 @@ export type DecodingTemplateField =
       label: string;
       value: string;
     };
-
-export type DecodingTemplateLegacyField =
-  | "alias"
-  | "project"
-  | "projectNumber"
-  | "phase"
-  | "discipline"
-  | "type"
-  | "level"
-  | "number"
-  | "revision"
-  | "status";
 
 export type DecodingTemplate = {
   id: string;
@@ -106,6 +97,7 @@ export type ParsedSegments = {
   phase: string | null;
   disciplineCode: string | null;
   documentType: string | null;
+  buildingDesignation: string | null;
   level: string | null;
   drawingNumber: string | null;
   revision: string | null;
@@ -121,6 +113,7 @@ export type FileRecord = {
   modifiedAt: string;
   projectName: string;
   projectNumber: string;
+  namingStandardVersion: NamingStandardVersion;
   sourceKey: "EDT" | "PDF";
   sourceLabel: string;
   disciplineFolder: string;
@@ -161,6 +154,7 @@ export type DecodingDictionary = {
 export type ScanResult = {
   projectName: string;
   projectPath: string;
+  namingStandardVersion: NamingStandardVersion;
   scannedAt: string;
   totalFiles: number;
   validCount: number;
@@ -185,6 +179,7 @@ export type SortKey =
   | "phase"
   | "disciplineCode"
   | "documentType"
+  | "buildingDesignation"
   | "level"
   | "drawingNumber"
   | "revision"
@@ -236,6 +231,7 @@ export type NamingFileRow = {
   relativePath: string;
   extension: string;
   documentType: string;
+  buildingDesignation: string;
   level: string;
   drawingNumber: string;
   drawingNumberLocked: boolean;
@@ -250,10 +246,12 @@ export type ResolvedSession = {
 };
 
 export type ParsedStandardName = {
+  namingStandardVersion: NamingStandardVersion;
   projectNumber: string;
   phase: string;
   disciplineCode: string;
   documentType: string;
+  buildingDesignation: string | null;
   level: string;
   drawingNumber: string;
   revision: string;
@@ -317,6 +315,17 @@ export type ExportInvalidFilesReportResult = {
   reportPath: string | null;
 };
 
+export type ExportProjectProfileInput = {
+  projectName: string;
+  projectNumber: string;
+  namingStandardVersion: NamingStandardVersion;
+};
+
+export type ExportProjectProfileResult = {
+  saved: boolean;
+  profilePath: string | null;
+};
+
 export interface FileFilterApi {
   getSettings: () => Promise<AppSettings>;
   getNamingStandard: () => Promise<NamingStandardConfig>;
@@ -330,6 +339,7 @@ export interface FileFilterApi {
   exportInvalidFilesReport: (
     files: InvalidReportFile[],
   ) => Promise<ExportInvalidFilesReportResult>;
+  exportProjectProfile: (input: ExportProjectProfileInput) => Promise<ExportProjectProfileResult>;
   getDecodingDictionary: () => Promise<DecodingDictionary>;
   chooseDirectory: (title: string) => Promise<string | null>;
   listNamingFiles: (folderPath: string) => Promise<NamingFilesResult>;
