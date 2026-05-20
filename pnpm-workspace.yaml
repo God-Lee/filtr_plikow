@@ -1,5 +1,6 @@
 packages:
   - artifacts/file-filter-desktop
+  - artifacts/external-naming-desktop
 allowBuilds:
   electron: true
   esbuild: true

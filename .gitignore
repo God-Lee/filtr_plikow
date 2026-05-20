@@ -55,5 +55,10 @@ Thumbs.db
 /artifacts/file-filter-desktop/release/
 /artifacts/file-filter-desktop/release/win-unpacked/
 /artifacts/file-filter-desktop/release/builder-debug.yml
+/artifacts/external-naming-desktop/dist/
+/artifacts/external-naming-desktop/node_modules/
+/artifacts/external-naming-desktop/release/
+/artifacts/external-naming-desktop/release/win-unpacked/
+/artifacts/external-naming-desktop/release/builder-debug.yml
 /.tmp_excel/
 /Źródła/
